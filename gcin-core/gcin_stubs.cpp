@@ -151,6 +151,30 @@ int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers) {
     return feedkey_pho((KeySym)keyval, modifiers);
 }
 
+int gcin_core_get_preedit(char *out, int outlen) {
+    extern int get_DispInArea_str(char *out);
+    char buf[512];
+    int n = get_DispInArea_str(buf);
+    if (n >= outlen) n = outlen - 1;
+    memcpy(out, buf, n);
+    out[n] = '\0';
+    return n;
+}
+
+int gcin_core_get_candidates_cangjie(char (*cands)[32], int max_n) {
+    extern char **seltab;
+    if (!seltab || !cur_inmd) return 0;
+    int n = 0;
+    for (int i = 0; i < cur_inmd->M_DUP_SEL && n < max_n; i++) {
+        if (seltab[i] && seltab[i][0]) {
+            strncpy(cands[n], seltab[i], 31);
+            cands[n][31] = '\0';
+            n++;
+        }
+    }
+    return n;
+}
+
 void gcin_core_reset(void) {
     extern void ClrIn(void);
     extern void clrin_pho(void);

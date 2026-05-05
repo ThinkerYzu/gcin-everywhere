@@ -15,16 +15,75 @@ struct _GcinEngineClass { IBusEngineClass parent; };
 G_DEFINE_TYPE(GcinEngine, gcin_engine, IBUS_TYPE_ENGINE)
 #define GCIN_TYPE_ENGINE (gcin_engine_get_type())
 
-static gboolean gcin_engine_process_key_event(IBusEngine *e,
-        guint keyval, guint keycode, guint modifiers) {
-    (void)keyval; (void)keycode; (void)modifiers;
-    return FALSE; /* Phase 3/4: route to feedkey_gtab / feedkey_pho */
+/* ── Commit callback ─────────────────────────────────────────────── */
+
+static void on_commit(const char *utf8, void *userdata) {
+    IBusEngine *e = (IBusEngine *)userdata;
+    IBusText *text = ibus_text_new_from_string(utf8);
+    ibus_engine_commit_text(e, text);
 }
+
+/* ── Preedit + candidates update ─────────────────────────────────── */
+
+static void update_ui(IBusEngine *iengine) {
+    GcinEngine *e = (GcinEngine *)iengine;
+
+    /* Preedit */
+    char preedit[256];
+    gcin_core_get_preedit(preedit, sizeof(preedit));
+    IBusText *pre = ibus_text_new_from_string(preedit);
+    ibus_text_append_attribute(pre, IBUS_ATTR_TYPE_UNDERLINE,
+                               IBUS_ATTR_UNDERLINE_SINGLE, 0, -1);
+    ibus_engine_update_preedit_text(iengine, pre, g_utf8_strlen(preedit, -1), preedit[0] != '\0');
+
+    /* Candidates */
+    ibus_lookup_table_clear(e->table);
+    char cands[16][32];
+    int n = gcin_core_get_candidates_cangjie(cands, 16);
+    for (int i = 0; i < n; i++)
+        ibus_lookup_table_append_candidate(e->table,
+                                           ibus_text_new_from_string(cands[i]));
+    if (n > 0)
+        ibus_engine_update_lookup_table(iengine, e->table, TRUE);
+    else
+        ibus_engine_hide_lookup_table(iengine);
+}
+
+/* ── Key event ───────────────────────────────────────────────────── */
+
+static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
+        guint keyval, guint keycode, guint modifiers) {
+    (void)keycode;
+    if (modifiers & IBUS_RELEASE_MASK) return FALSE;
+    GcinEngine *e = (GcinEngine *)iengine;
+    if (!e->chinese_mode) return FALSE;
+
+    /* Re-register callback each keypress so commit fires on the active engine */
+    gcin_core_set_commit_cb(on_commit, iengine);
+    int consumed = (e->mode == 0)
+        ? gcin_core_feedkey_cangjie(keyval, modifiers)
+        : gcin_core_feedkey_zhuyin(keyval, modifiers);
+
+    update_ui(iengine);
+    return consumed ? TRUE : FALSE;
+}
+
+/* ── Engine lifecycle ────────────────────────────────────────────── */
 
 static void gcin_engine_enable(IBusEngine *e)    { (void)e; }
 static void gcin_engine_disable(IBusEngine *e)   { (void)e; }
-static void gcin_engine_reset(IBusEngine *e)     { (void)e; gcin_core_reset(); }
-static void gcin_engine_focus_out(IBusEngine *e) { (void)e; gcin_core_reset(); }
+
+static void gcin_engine_reset(IBusEngine *e) {
+    gcin_core_reset();
+    ibus_engine_hide_preedit_text(e);
+    ibus_engine_hide_lookup_table(e);
+}
+
+static void gcin_engine_focus_out(IBusEngine *e) {
+    gcin_core_reset();
+    ibus_engine_hide_preedit_text(e);
+    ibus_engine_hide_lookup_table(e);
+}
 
 static void gcin_engine_class_init(GcinEngineClass *klass) {
     IBusEngineClass *ec = IBUS_ENGINE_CLASS(klass);
@@ -42,7 +101,10 @@ static void gcin_engine_init(GcinEngine *e) {
     g_object_ref_sink(e->table);
 }
 
+/* ── main ────────────────────────────────────────────────────────── */
+
 int main(int argc, char **argv) {
+    (void)argc; (void)argv;
     ibus_init();
     IBusBus *bus = ibus_bus_new();
     g_assert(ibus_bus_is_connected(bus));

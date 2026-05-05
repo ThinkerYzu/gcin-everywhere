@@ -26,6 +26,15 @@ int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers);
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 
+/* Get current Cangjie preedit (key-name glyphs typed so far).
+   Returns byte count written to out (not including NUL). */
+int gcin_core_get_preedit(char *out, int outlen);
+
+/* Get Cangjie candidates into cands[0..return_value-1].
+   Each entry is a NUL-terminated UTF-8 string (<= 31 bytes).
+   max_n: size of the cands array. Returns number of candidates. */
+int gcin_core_get_candidates_cangjie(char (*cands)[32], int max_n);
+
 #ifdef __cplusplus
 }
 #endif
