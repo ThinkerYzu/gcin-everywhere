@@ -21,6 +21,15 @@ USER_COMPONENT_DIR="$HOME/.local/share/ibus/component"
 pass=0; fail=0
 ENGINE_PID=""
 
+# Resolve table directory: explicit env var → /tmp/gcin-tables (built locally) → system
+if [[ -z "$GCIN_TABLE_DIR" ]]; then
+    if [[ -f "/tmp/gcin-tables/cj.gtab" ]]; then
+        GCIN_TABLE_DIR="/tmp/gcin-tables"
+    else
+        GCIN_TABLE_DIR="/usr/share/gcin"
+    fi
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 green()  { printf '\033[32m  PASS\033[0m  %s\n' "$*"; }
@@ -44,13 +53,10 @@ trap cleanup EXIT
 echo "Phase 2 IBus registration test"
 echo "================================"
 
-if [[ ! -f "$BINARY" ]]; then
-    info "ibus-engine-gcin not found — building..."
-    IBUS_CFLAGS="-I/tmp/ibus-dev-extract/usr/include/ibus-1.0 $(pkg-config --cflags glib-2.0 gobject-2.0 gio-2.0)"
-    IBUS_LIBS="/usr/lib/x86_64-linux-gnu/libibus-1.0.so.5 $(pkg-config --libs glib-2.0 gobject-2.0 gio-2.0)"
-    make -C "$SCRIPT_DIR" IBUS_CFLAGS="$IBUS_CFLAGS" IBUS_LIBS="$IBUS_LIBS" \
-        2>&1 | tail -3
-fi
+IBUS_CFLAGS="-I/tmp/ibus-dev-extract/usr/include/ibus-1.0 $(pkg-config --cflags glib-2.0 gobject-2.0 gio-2.0)"
+IBUS_LIBS="/usr/lib/x86_64-linux-gnu/libibus-1.0.so.5 $(pkg-config --libs glib-2.0 gobject-2.0 gio-2.0)"
+make -C "$SCRIPT_DIR" IBUS_CFLAGS="$IBUS_CFLAGS" IBUS_LIBS="$IBUS_LIBS" \
+    2>&1 | tail -3
 
 if [[ -f "$BINARY" ]]; then
     pass "ibus-engine-gcin binary exists"
@@ -96,8 +102,8 @@ sleep 2  # give daemon time to restart and rescan components
 # ── Step 4: start engine ──────────────────────────────────────────────────
 
 # Verify data tables exist — engine will exit immediately without them
-PHO_TAB="${GCIN_TABLE_DIR:-/usr/share/gcin}/pho.tab2"
-CJ_GTAB="${GCIN_TABLE_DIR:-/usr/share/gcin}/cj.gtab"
+PHO_TAB="$GCIN_TABLE_DIR/pho.tab2"
+CJ_GTAB="$GCIN_TABLE_DIR/cj.gtab"
 
 if [[ ! -f "$PHO_TAB" ]] || [[ ! -f "$CJ_GTAB" ]]; then
     yellow "data tables not found — skipping live engine start"
@@ -107,7 +113,7 @@ if [[ ! -f "$PHO_TAB" ]] || [[ ! -f "$CJ_GTAB" ]]; then
     info "Checking static registration only (ibus list-engine from XML)..."
     ENGINE_STARTED=false
 else
-    GCIN_TABLE_DIR="${GCIN_TABLE_DIR:-/usr/share/gcin}" "$BINARY" &
+    GCIN_TABLE_DIR="$GCIN_TABLE_DIR" "$BINARY" &
     ENGINE_PID=$!
     sleep 1  # give ibus-daemon time to discover it
 
@@ -116,7 +122,7 @@ else
         ENGINE_STARTED=true
     else
         fail "ibus-engine-gcin exited immediately"
-        info "Check that data tables are installed at ${GCIN_TABLE_DIR:-/usr/share/gcin}"
+        info "Check that data tables are installed at $GCIN_TABLE_DIR"
         ENGINE_STARTED=false
     fi
 fi

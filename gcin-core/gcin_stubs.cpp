@@ -83,6 +83,11 @@ void send_ascii(char key) {
     if (g_commit_cb) g_commit_cb(buf, g_commit_data);
 }
 
+/* pho-util.cpp calls update_table_file() to copy system tables to ~/.gcin/.
+   In gcin-everywhere we load tables from a specified dir, so no user-local
+   copy is needed; this stub silences the spurious "mv: cannot stat" error. */
+void update_table_file(char *name, int version) { (void)name; (void)version; }
+
 /* ── gcin_core_init ───────────────────────────────────────────── */
 extern void init_TableDir(void);
 extern void load_tab_pho_file(void);

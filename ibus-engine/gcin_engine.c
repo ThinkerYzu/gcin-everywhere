@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
     ibus_factory_add_engine(factory, "gcin-cangjie", GCIN_TYPE_ENGINE);
     ibus_factory_add_engine(factory, "gcin-zhuyin",  GCIN_TYPE_ENGINE);
     ibus_bus_request_name(bus, "org.freedesktop.IBus.Gcin", 0);
-    gcin_core_init("/usr/share/gcin");
+    const char *table_dir = getenv("GCIN_TABLE_DIR");
+    gcin_core_init(table_dir ? table_dir : "/usr/share/gcin");
     ibus_main();
     return 0;
 }

@@ -32,8 +32,7 @@ GCIN_SRCS := \
     $(GCIN)/unix-exec.cpp     \
     $(GCIN)/locale.cpp        \
     $(GCIN)/phrase.cpp        \
-    $(GCIN)/gtab-use-count.cpp \
-    $(GCIN)/table-update.cpp
+    $(GCIN)/gtab-use-count.cpp
 
 CORE_SRCS := gcin_stubs.cpp
 
