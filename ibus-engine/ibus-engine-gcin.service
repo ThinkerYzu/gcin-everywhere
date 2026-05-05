@@ -1,0 +1,11 @@
+[Unit]
+Description=gcin IBus Engine
+After=graphical-session.target
+
+[Service]
+ExecStart=/home/thinker/.local/lib/ibus-gcin/ibus-engine-gcin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

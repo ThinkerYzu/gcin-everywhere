@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <ibus.h>
 #include "../gcin-core/gcin-core.h"
 
@@ -30,7 +31,10 @@ static void update_ui(IBusEngine *iengine) {
 
     /* Preedit */
     char preedit[256];
-    gcin_core_get_preedit(preedit, sizeof(preedit));
+    if (e->mode == 0)
+        gcin_core_get_preedit(preedit, sizeof(preedit));
+    else
+        gcin_core_get_preedit_zhuyin(preedit, sizeof(preedit));
     IBusText *pre = ibus_text_new_from_string(preedit);
     ibus_text_append_attribute(pre, IBUS_ATTR_TYPE_UNDERLINE,
                                IBUS_ATTR_UNDERLINE_SINGLE, 0, -1);
@@ -39,7 +43,9 @@ static void update_ui(IBusEngine *iengine) {
     /* Candidates */
     ibus_lookup_table_clear(e->table);
     char cands[16][32];
-    int n = gcin_core_get_candidates_cangjie(cands, 16);
+    int n = (e->mode == 0)
+        ? gcin_core_get_candidates_cangjie(cands, 16)
+        : gcin_core_get_candidates_zhuyin(cands, 16);
     for (int i = 0; i < n; i++)
         ibus_lookup_table_append_candidate(e->table,
                                            ibus_text_new_from_string(cands[i]));
@@ -97,7 +103,8 @@ static void gcin_engine_class_init(GcinEngineClass *klass) {
 static void gcin_engine_init(GcinEngine *e) {
     e->table        = ibus_lookup_table_new(10, 0, TRUE, TRUE);
     e->chinese_mode = TRUE;
-    e->mode         = 0;
+    const gchar *name = ibus_engine_get_name(IBUS_ENGINE(e));
+    e->mode = (name && g_str_has_suffix(name, "zhuyin")) ? 1 : 0;
     g_object_ref_sink(e->table);
 }
 
@@ -105,6 +112,19 @@ static void gcin_engine_init(GcinEngine *e) {
 
 int main(int argc, char **argv) {
     (void)argc; (void)argv;
+
+    /* Init gcin core before connecting to IBus — table loading blocks the
+       event loop, so it must complete before the daemon sends "create engine". */
+    const char *table_dir = getenv("GCIN_TABLE_DIR");
+    if (!table_dir) {
+        static char local_dir[512];
+        const char *home = getenv("HOME");
+        snprintf(local_dir, sizeof(local_dir), "%s/.local/share/gcin",
+                 home ? home : "/root");
+        table_dir = local_dir;
+    }
+    gcin_core_init(table_dir);
+
     ibus_init();
     IBusBus *bus = ibus_bus_new();
     g_assert(ibus_bus_is_connected(bus));
@@ -112,8 +132,6 @@ int main(int argc, char **argv) {
     ibus_factory_add_engine(factory, "gcin-cangjie", GCIN_TYPE_ENGINE);
     ibus_factory_add_engine(factory, "gcin-zhuyin",  GCIN_TYPE_ENGINE);
     ibus_bus_request_name(bus, "org.freedesktop.IBus.Gcin", 0);
-    const char *table_dir = getenv("GCIN_TABLE_DIR");
-    gcin_core_init(table_dir ? table_dir : "/usr/share/gcin");
     ibus_main();
     return 0;
 }

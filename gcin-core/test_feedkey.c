@@ -158,6 +158,61 @@ static void test_zhuyin_escape_clears(void) {
     EXPECT_NOTHING_COMMITTED("zhuyin: escape after partial input does not commit");
 }
 
+static void test_zhuyin_preedit_builds(void) {
+    /* Preedit accumulates bopomofo as keys are typed */
+    reset();
+    gcin_core_feedkey_zhuyin('j', 0);  /* ㄓ */
+    char pre1[64];
+    int n1 = gcin_core_get_preedit_zhuyin(pre1, sizeof(pre1));
+    gcin_core_feedkey_zhuyin('u', 0);  /* ㄨ */
+    char pre2[64];
+    int n2 = gcin_core_get_preedit_zhuyin(pre2, sizeof(pre2));
+    gcin_core_feedkey_zhuyin('4', 0);  /* ˋ tone 4 */
+    char pre3[64];
+    int n3 = gcin_core_get_preedit_zhuyin(pre3, sizeof(pre3));
+    /* In Daqian, ㄨ is implicit after ㄓ; preedit may not grow on 'u'.
+       The tone press (4) always grows the preedit. */
+    if (n1 > 0 && n3 > n1)
+        PASS("zhuyin: preedit non-empty after j; grows after tone (4)");
+    else
+        FAIL("zhuyin: preedit non-empty after j; grows after tone (4)",
+             "n1=%d n2=%d n3=%d (expected n1>0 and n3>n1)", n1, n2, n3);
+    gcin_core_reset();
+}
+
+static void test_zhuyin_candidates_appear_after_tone(void) {
+    /* Candidates appear after a complete syllable (initial+vowel+tone) */
+    reset();
+    gcin_core_feedkey_zhuyin('j', 0);
+    gcin_core_feedkey_zhuyin('u', 0);
+    gcin_core_feedkey_zhuyin('4', 0);  /* tone triggers candidate display */
+    char cands[16][32];
+    int n = gcin_core_get_candidates_zhuyin(cands, 16);
+    if (n > 0)
+        PASS("zhuyin: candidates appear after ju4 (ㄓㄨˋ)");
+    else
+        FAIL("zhuyin: candidates appear after ju4 (ㄓㄨˋ)", "got 0 candidates");
+    gcin_core_reset();
+}
+
+static void test_zhuyin_preedit_clears_after_commit(void) {
+    /* After commit, preedit and candidates are empty */
+    reset();
+    gcin_core_feedkey_zhuyin('j', 0);
+    gcin_core_feedkey_zhuyin('u', 0);
+    gcin_core_feedkey_zhuyin('4', 0);
+    gcin_core_feedkey_zhuyin('1', 0);  /* select first candidate → commit */
+    char pre[64];
+    int np = gcin_core_get_preedit_zhuyin(pre, sizeof(pre));
+    char cands[16][32];
+    int nc = gcin_core_get_candidates_zhuyin(cands, 16);
+    if (np == 0 && nc == 0)
+        PASS("zhuyin: preedit and candidates clear after commit");
+    else
+        FAIL("zhuyin: preedit and candidates clear after commit",
+             "preedit_len=%d candidates=%d", np, nc);
+}
+
 /* ── main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -200,6 +255,9 @@ int main(void) {
     printf("\nZhuyin:\n");
     test_zhuyin_tone_triggers_candidates();
     test_zhuyin_escape_clears();
+    test_zhuyin_preedit_builds();
+    test_zhuyin_candidates_appear_after_tone();
+    test_zhuyin_preedit_clears_after_commit();
 
     printf("\n%d passed, %d failed, %d skipped\n",
            pass_count, fail_count, skip_count);

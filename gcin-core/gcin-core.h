@@ -35,6 +35,15 @@ int gcin_core_get_preedit(char *out, int outlen);
    max_n: size of the cands array. Returns number of candidates. */
 int gcin_core_get_candidates_cangjie(char (*cands)[32], int max_n);
 
+/* Get current Zhuyin preedit (bopomofo symbols for syllable typed so far).
+   Returns byte count written to out (not including NUL). */
+int gcin_core_get_preedit_zhuyin(char *out, int outlen);
+
+/* Get Zhuyin candidates into cands[0..return_value-1].
+   Each entry is a NUL-terminated UTF-8 string (<= 31 bytes).
+   max_n: size of the cands array. Returns number of candidates. */
+int gcin_core_get_candidates_zhuyin(char (*cands)[32], int max_n);
+
 #ifdef __cplusplus
 }
 #endif

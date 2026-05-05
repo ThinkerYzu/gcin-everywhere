@@ -109,8 +109,11 @@ static int g_cangjie_inmd = -1;
 static int g_zhuyin_inmd  = -1;
 
 int gcin_core_init(const char *table_dir) {
-    if (table_dir && *table_dir)
+    if (table_dir && *table_dir) {
         TableDir = (char *)table_dir;
+        /* pho_load() branches on getenv("GCIN_TABLE_DIR"), not TableDir directly */
+        setenv("GCIN_TABLE_DIR", table_dir, 1);
+    }
     load_setttings();           /* initializes pho_kbm_name, pho_selkey, etc. */
     gtab_auto_select_by_phrase = 2; /* GTAB_OPTION_NO: commit each char directly, no phrase buffer */
     init_TableDir();
@@ -171,6 +174,33 @@ int gcin_core_get_candidates_cangjie(char (*cands)[32], int max_n) {
             cands[n][31] = '\0';
             n++;
         }
+    }
+    return n;
+}
+
+int gcin_core_get_preedit_zhuyin(char *out, int outlen) {
+    if (!poo.typ_pho[0] && !poo.typ_pho[1] && !poo.typ_pho[2] && !poo.typ_pho[3]) {
+        out[0] = '\0';
+        return 0;
+    }
+    phokey_t key = pho2key(poo.typ_pho);
+    char *s = phokey_to_str(key);
+    int n = strlen(s);
+    if (n >= outlen) n = outlen - 1;
+    memcpy(out, s, n);
+    out[n] = '\0';
+    return n;
+}
+
+int gcin_core_get_candidates_zhuyin(char (*cands)[32], int max_n) {
+    extern PHO_ITEM *ch_pho;
+    if (!ch_pho || !poo.maxi) return 0;
+    int n = 0;
+    int ii = poo.start_idx + poo.cpg;
+    for (int i = 0; i < poo.maxi && n < max_n && ii < poo.stop_idx; i++, ii++) {
+        memcpy(cands[n], ch_pho[ii].ch, CH_SZ);
+        cands[n][CH_SZ] = '\0';
+        n++;
     }
     return n;
 }
