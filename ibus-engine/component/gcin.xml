@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component>
+  <name>org.freedesktop.IBus.Gcin</name>
+  <description>gcin Traditional Chinese Input Method</description>
+  <exec>/usr/lib/ibus-gcin/ibus-engine-gcin</exec>
+  <version>0.1</version>
+  <author>gcin-everywhere contributors</author>
+  <license>GPL</license>
+  <homepage>https://github.com/pkg-ime/gcin</homepage>
+  <textdomain>gcin</textdomain>
+
+  <engines>
+    <engine>
+      <name>gcin-cangjie</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Cangjie (倉頡)</longname>
+      <description>Cangjie Traditional Chinese input via gcin engine</description>
+      <rank>99</rank>
+      <symbol>倉</symbol>
+      <layout>default</layout>
+    </engine>
+    <engine>
+      <name>gcin-zhuyin</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Zhuyin (注音)</longname>
+      <description>Zhuyin/Bopomofo Traditional Chinese input via gcin engine</description>
+      <rank>99</rank>
+      <symbol>注</symbol>
+      <layout>default</layout>
+    </engine>
+  </engines>
+</component>

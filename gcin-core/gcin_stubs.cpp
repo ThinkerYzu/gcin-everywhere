@@ -1,11 +1,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 #include "gcin-core.h"
 #include "../gcin/gcin.h"
 #include "../gcin/pho.h"
 #include "../gcin/tsin.h"
 #include "../gcin/gst.h"
+#include "../gcin/win1.h"
 
 /* ── Globals from excluded files expected by gcin source ─────── */
 
@@ -18,8 +20,7 @@ int win_xl = 0, win_yl = 0;
 int win_x  = 0, win_y  = 0;
 int dpy_xl = 1920, dpy_yl = 1080;
 
-/* From gcin-settings.cpp */
-int gcin_font_size = 16;
+/* gcin_font_size: defined in gcin-settings.cpp (compiled) */
 
 /* From win-gtab.cpp */
 GtkWidget *gwin_gtab    = NULL;
@@ -29,12 +30,22 @@ gboolean   last_cursor_off = 0;
 /* From win-pho.cpp */
 GtkWidget *gwin_pho     = NULL;
 
+/* From win0.cpp */
+GtkWidget *gwin0        = NULL;
+
 /* From win1.cpp */
 GtkWidget *gwin1        = NULL;
 
 /* From gcin-common.cpp / pho2pinyin.cpp */
 PIN_JUYIN *pin_juyin    = NULL;
 int        text_pho_N   = 3;
+
+/* From gcin.cpp */
+gboolean win_kbm_inited = 0;
+int      b_show_win_kbm = 0;
+
+/* From gcin-common.cpp */
+gboolean b_use_full_space = 0;
 
 /* current_CS: gcin tracks the active X11 client.
    IBus engine is single-client; use a static instance. */
@@ -126,11 +137,9 @@ void show_win_pho(void)             {}
 void hide_win_pho(void)             {}
 void hide_win_kbm(void)             {}
 void hide_win0(void)                {}
-void hide_row2_if_necessary(void)   {}
 void minimize_win_gtab(void)        {}
 void minimize_win_pho(void)         {}
 void disp_gtab(char *s)             { (void)s; }
-void disp_gbuf(void)                {}
 void disp_gtab_sel(char *s)         { (void)s; }
 void disp_gtab_pre_sel(char *s)     { (void)s; }
 void disp_pho(int i, char *s)       { (void)i; (void)s; }
@@ -149,11 +158,8 @@ void clr_tsin_cursor(int i)         { (void)i; }
 void bell(void)                     {}
 void disp_tray_icon(void)           {}
 void save_CS_current_to_temp(void)  {}
-void show_tsin_stat(void)           {}
 void recreate_win1_if_nessary(void) {}
-void start_gtab_pho_query(char *s)  { (void)s; }
 void pho_play(phokey_t k)           { (void)k; }
-void gtab_scan_pre_select(gboolean b) { (void)b; }
 void hide_gtab_pre_sel(void)        {}
 void change_win_fg_bg(GtkWidget *w, GtkWidget *l) { (void)w; (void)l; }
 void change_win_bg(GtkWidget *w)    { (void)w; }
@@ -171,13 +177,69 @@ void create_win_save_phrase(struct WSP_S *wsp, int wspN) { (void)wsp; (void)wspN
 
 /* ── UI stubs — boolean ───────────────────────────────────────── */
 gboolean full_char_proc(KeySym k)          { (void)k; return FALSE; }
-gboolean shift_char_proc(KeySym k, int s)  { (void)k; (void)s; return FALSE; }
-gboolean pre_punctuation(KeySym k)         { (void)k; return FALSE; }
-gboolean pre_punctuation_hsu(KeySym k)     { (void)k; return FALSE; }
 gboolean gcin_edit_display_ap_only(void)   { return FALSE; }
 gboolean gcin_display_on_the_spot_key(void){ return FALSE; }
 
 /* ── Misc stubs ───────────────────────────────────────────────── */
 void char_play(char *utf8)          { (void)utf8; }
 void check_CS(void)                 {}
-void skip_utf8_sigature(FILE *fp)   { (void)fp; }
+/* skip_utf8_sigature: defined in locale.cpp (compiled) */
+
+/* ── Functions from excluded eve.cpp / gcin.cpp ─────────────── */
+char current_method_type(void)      { return 0; }
+void init_in_method(void)           {}
+
+/* ── Functions from excluded win-sym.cpp ────────────────────── */
+gboolean win_sym_page_up(void)      { return FALSE; }
+gboolean win_sym_page_down(void)    { return FALSE; }
+
+/* ── Functions from excluded gcin.cpp ───────────────────────── */
+char *half_char_to_full_char(KeySym xkey) { (void)xkey; return NULL; }
+
+/* ── Pinyin stubs (only needed for Pinyin mode) ─────────────── */
+void load_pin_juyin(void)                    {}
+gboolean inph_typ_pho_pinyin(int k)          { (void)k; return FALSE; }
+
+/* ── Win1 display stubs ──────────────────────────────────────── */
+void set_win1_cb(cb_selec_by_idx_t a, cb_page_ud_t b, cb_page_ud_t c) { (void)a; (void)b; (void)c; }
+void init_tsin_selection_win(void)  {}
+void clear_sele(void)               {}
+void set_sele_text(int tN, int i, char *t, int l) { (void)tN; (void)i; (void)t; (void)l; }
+void disp_arrow_up(void)            {}
+void disp_arrow_down(void)          {}
+void disp_selections(int x, int y)  { (void)x; (void)y; }
+void hide_selections_win(void)      {}
+
+/* ── Win0 display stubs ──────────────────────────────────────── */
+void clear_chars_all(void)          {}
+void hide_char(int i)               { (void)i; }
+void set_cursor_tsin(int i)         { (void)i; }
+void disp_tsin_pho(int i, char *s)  { (void)i; (void)s; }
+void clr_in_area_pho_tsin(void)     {}
+void compact_win0(void)             {}
+void disp_tsin_eng_pho(int e)       { (void)e; }
+void disp_tsin_select(int i)        { (void)i; }
+void show_button_pho(gboolean b)    { (void)b; }
+
+/* ── Win-gtab display stubs ──────────────────────────────────── */
+void clear_gtab_in_area(void)       {}
+void get_win_gtab_geom(void)        {}
+void init_gtab_pho_query_win(void)  {}
+void set_key_codes_label_pho(char *s) { (void)s; }
+
+/* ── Win-pho-near stubs ──────────────────────────────────────── */
+void create_win_pho_near(phokey_t p)  { (void)p; }
+void close_win_pho_near(void)         {}
+
+/* ── Win-gtab display stubs (additional) ────────────────────── */
+void gtab_disp_empty(char *tt, int N) { (void)tt; (void)N; }
+
+/* ── watch_fopen: file-watch utility — just open the file ─────── */
+FILE *watch_fopen(char *filename, time_t *pfile_modify_time) {
+    FILE *fp = fopen(filename, "rb");
+    if (fp && pfile_modify_time) {
+        struct stat st;
+        if (fstat(fileno(fp), &st) == 0) *pfile_modify_time = st.st_mtime;
+    }
+    return fp;
+}
