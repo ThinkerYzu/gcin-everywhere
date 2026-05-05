@@ -109,6 +109,7 @@ static int g_cangjie_inmd = -1;
 static int g_zhuyin_inmd  = -1;
 static int g_quick_inmd   = -1;
 static int g_array_inmd   = -1;
+static int g_cj5_inmd     = -1;
 
 int gcin_core_init(const char *table_dir) {
     if (table_dir && *table_dir) {
@@ -134,6 +135,7 @@ int gcin_core_init(const char *table_dir) {
     g_zhuyin_inmd = find_inmd("pho");  /* Zhuyin uses method_type_PHO */
     g_quick_inmd  = find_inmd("simplex");
     g_array_inmd  = find_inmd("ar30");
+    g_cj5_inmd    = find_inmd("cj5");
     return 0;
 }
 
@@ -176,6 +178,10 @@ int gcin_core_feedkey_quick(unsigned long keyval, int modifiers) {
 
 int gcin_core_feedkey_array(unsigned long keyval, int modifiers) {
     return feedkey_gtab_method(g_array_inmd, keyval, modifiers);
+}
+
+int gcin_core_feedkey_cj5(unsigned long keyval, int modifiers) {
+    return feedkey_gtab_method(g_cj5_inmd, keyval, modifiers);
 }
 
 int gcin_core_get_preedit(char *out, int outlen) {

@@ -296,6 +296,41 @@ static void test_array_escape_clears(void) {
     EXPECT_NOTHING_COMMITTED("array: escape after partial input does not commit");
 }
 
+/* ── CJ5 (倉頡五代) tests ─────────────────────────────────────── */
+
+static void test_cj5_single_char(void) {
+    /*
+     * CJ5 (cj5.gtab) uses the same radical keys as CJ3/CJ4.
+     * 'k' = 大 radical — first candidate for 'k' is 大.
+     * space_style=GTAB_space_auto_first_nofull: space sets spc_pressed=1,
+     * then '1' selects first candidate.
+     */
+    reset();
+    gcin_core_feedkey_cj5('k', 0);
+    gcin_core_feedkey_cj5(K_space, 0);
+    gcin_core_feedkey_cj5('1', 0);
+    EXPECT_COMMITTED("大", "cj5: k+space+1 commits 大");
+}
+
+static void test_cj5_two_char(void) {
+    /*
+     * 'a'+'b' = 日+月 radicals — first candidate is 明 (same as Cangjie).
+     */
+    reset();
+    gcin_core_feedkey_cj5('a', 0);
+    gcin_core_feedkey_cj5('b', 0);
+    gcin_core_feedkey_cj5(K_space, 0);
+    gcin_core_feedkey_cj5('1', 0);
+    EXPECT_COMMITTED("明", "cj5: ab+space+1 commits 明");
+}
+
+static void test_cj5_escape_clears(void) {
+    reset();
+    gcin_core_feedkey_cj5('k', 0);
+    gcin_core_feedkey_cj5(K_escape, 0);
+    EXPECT_NOTHING_COMMITTED("cj5: escape after partial input does not commit");
+}
+
 /* ── Phrase table tests ───────────────────────────────────────── */
 
 static void test_phrase_table(const char *table_dir) {
@@ -353,11 +388,13 @@ int main(void) {
         return 0;  /* not a failure — tables just not compiled yet */
     }
 
-    char simplex_gtab[512], ar30_gtab[512];
+    char simplex_gtab[512], ar30_gtab[512], cj5_gtab[512];
     snprintf(simplex_gtab, sizeof(simplex_gtab), "%s/simplex.gtab", table_dir);
     snprintf(ar30_gtab,    sizeof(ar30_gtab),    "%s/ar30.gtab",    table_dir);
+    snprintf(cj5_gtab,     sizeof(cj5_gtab),     "%s/cj5.gtab",     table_dir);
     int have_quick = file_exists(simplex_gtab);
     int have_array = file_exists(ar30_gtab);
+    int have_cj5   = file_exists(cj5_gtab);
 
     gcin_core_init(table_dir);
 
@@ -397,6 +434,17 @@ int main(void) {
     } else {
         SKIP("array: aaa+1 commits 三",              "ar30.gtab not found");
         SKIP("array: escape after partial input",   "ar30.gtab not found");
+    }
+
+    printf("\nCJ5 (倉頡五代):\n");
+    if (have_cj5) {
+        test_cj5_single_char();
+        test_cj5_two_char();
+        test_cj5_escape_clears();
+    } else {
+        SKIP("cj5: k+space+1 commits 大",          "cj5.gtab not found");
+        SKIP("cj5: ab+space+1 commits 明",          "cj5.gtab not found");
+        SKIP("cj5: escape after partial input",     "cj5.gtab not found");
     }
 
     printf("\nPhrase table (Alt+Shift / Ctrl):\n");

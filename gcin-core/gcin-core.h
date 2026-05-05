@@ -31,6 +31,10 @@ int gcin_core_feedkey_quick(unsigned long keyval, int modifiers);
    Uses ar30.gtab — same feedkey_gtab path as Cangjie. */
 int gcin_core_feedkey_array(unsigned long keyval, int modifiers);
 
+/* Feed a keypress to the CJ5 (倉頡五代) engine.
+   Uses cj5.gtab — same feedkey_gtab path as Cangjie. */
+int gcin_core_feedkey_cj5(unsigned long keyval, int modifiers);
+
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 

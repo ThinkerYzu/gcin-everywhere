@@ -50,5 +50,15 @@
       <symbol>列</symbol>
       <layout>default</layout>
     </engine>
+    <engine>
+      <name>gcin-cj5</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Cangjie 5 (倉頡五代)</longname>
+      <description>Cangjie 5 Traditional Chinese input via gcin engine</description>
+      <rank>99</rank>
+      <symbol>五</symbol>
+      <layout>default</layout>
+    </engine>
   </engines>
 </component>
