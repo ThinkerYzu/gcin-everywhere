@@ -48,7 +48,9 @@ tables: table-tools
 	cd $(GCIN) && NO_GTK_INIT=1 ./tsa2d32   data/tsin.src $(TABLES)/tsin32
 	cd $(GCIN) && NO_GTK_INIT=1 ./kbmcv     data/zo.kbmsrc
 	cp $(GCIN)/data/zo.kbm   $(TABLES)/
-	cp $(GCIN)/data/gtab.list $(TABLES)/
+	cp $(GCIN)/data/gtab.list        $(TABLES)/
+	cp $(GCIN)/data/phrase.table     $(TABLES)/
+	cp $(GCIN)/data/phrase-ctrl.table $(TABLES)/
 
 # ── Test and install ─────────────────────────────────────────────────
 

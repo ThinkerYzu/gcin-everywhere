@@ -26,6 +26,12 @@ int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers);
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 
+/* Feed an Alt+Shift key to the phrase table (phrase.table), or a Ctrl key to
+   phrase-ctrl.table. feed_phrase() routes internally based on ControlMask.
+   keyval: IBus/X11 key symbol. modifiers: X11 modifier bitmask (Mod1Mask,
+   ShiftMask, ControlMask). Returns 1 if a phrase was committed, 0 otherwise. */
+int gcin_core_feed_phrase(unsigned long keyval, int modifiers);
+
 /* Toggle full-width character mode (Shift+Space in gcin).
    In full-width mode all printable ASCII is converted to full-width Unicode
    via gcin's fullchar[] table before being committed. Returns new state. */

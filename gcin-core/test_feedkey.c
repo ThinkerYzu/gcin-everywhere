@@ -84,6 +84,11 @@ static void reset(void) {
 #define K_escape  0xff1b
 #define K_bs      0xff08
 
+/* X11 modifier bitmasks — same values used by feed_phrase() internally */
+#define ShiftMask   0x0001
+#define ControlMask 0x0004
+#define Mod1Mask    0x0008
+
 /* ── Cangjie tests ────────────────────────────────────────────── */
 
 static void test_cangjie_single_char(void) {
@@ -230,6 +235,40 @@ static void test_zhuyin_preedit_clears_after_commit(void) {
              "preedit_len=%d candidates=%d", np, nc);
 }
 
+/* ── Phrase table tests ───────────────────────────────────────── */
+
+static void test_phrase_table(const char *table_dir) {
+    char phrase_tab[512];
+    snprintf(phrase_tab, sizeof(phrase_tab), "%s/phrase.table", table_dir);
+    if (!file_exists(phrase_tab)) {
+        SKIP("phrase: alt+shift+i commits 、",    "phrase.table not found");
+        SKIP("phrase: alt+shift+o commits 。",    "phrase.table not found");
+        SKIP("phrase: ctrl+, commits ，",         "phrase-ctrl.table not found");
+        SKIP("phrase: ctrl+' commits 、",         "phrase-ctrl.table not found");
+        return;
+    }
+
+    /* Alt+Shift+i → 、  (phrase.table) */
+    reset();
+    gcin_core_feed_phrase('i', Mod1Mask|ShiftMask);
+    EXPECT_COMMITTED("、", "phrase: alt+shift+i commits 、");
+
+    /* Alt+Shift+o → 。 */
+    reset();
+    gcin_core_feed_phrase('o', Mod1Mask|ShiftMask);
+    EXPECT_COMMITTED("。", "phrase: alt+shift+o commits 。");
+
+    /* Ctrl+, → ，  (phrase-ctrl.table) */
+    reset();
+    gcin_core_feed_phrase(',', ControlMask);
+    EXPECT_COMMITTED("，", "phrase: ctrl+, commits ，");
+
+    /* Ctrl+' → 、 */
+    reset();
+    gcin_core_feed_phrase('\'', ControlMask);
+    EXPECT_COMMITTED("、", "phrase: ctrl+' commits 、");
+}
+
 /* ── main ─────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -278,6 +317,9 @@ int main(void) {
     test_zhuyin_preedit_builds();
     test_zhuyin_candidates_appear_after_tone();
     test_zhuyin_preedit_clears_after_commit();
+
+    printf("\nPhrase table (Alt+Shift / Ctrl):\n");
+    test_phrase_table(table_dir);
 
     printf("\n%d passed, %d failed, %d skipped\n",
            pass_count, fail_count, skip_count);

@@ -212,6 +212,17 @@ void gcin_core_reset(void) {
     clrin_pho();    /* clears Zhuyin phonetic buffer */
 }
 
+/* ── Phrase table ─────────────────────────────────────────────── */
+
+/* feed_phrase() is compiled from phrase.cpp (no X11/GTK deps).
+   It routes to phrase.table (Mod1Mask|ShiftMask) or phrase-ctrl.table
+   (ControlMask) based on the modifiers bitmask. */
+extern gboolean feed_phrase(KeySym ksym, int state);
+
+int gcin_core_feed_phrase(unsigned long keyval, int modifiers) {
+    return feed_phrase((KeySym)keyval, modifiers) ? 1 : 0;
+}
+
 /* ── Full-width character mode ────────────────────────────────── */
 
 /* Shift+Space toggles full-width mode in gcin (toggle_half_full_char in eve.cpp).
@@ -371,9 +382,17 @@ void close_win_pho_near(void)         {}
 /* ── Win-gtab display stubs (additional) ────────────────────── */
 void gtab_disp_empty(char *tt, int N) { (void)tt; (void)N; }
 
-/* ── watch_fopen: file-watch utility — just open the file ─────── */
+/* ── watch_fopen: file-watch utility ──────────────────────────── */
+/* Mirrors the real win-sym.cpp watch_fopen: try bare filename first
+   (user override), then fall back to TableDir/filename. phrase.cpp
+   calls this with bare names like "phrase.table". */
 FILE *watch_fopen(char *filename, time_t *pfile_modify_time) {
     FILE *fp = fopen(filename, "rb");
+    if (!fp && TableDir) {
+        char path[512];
+        snprintf(path, sizeof(path), "%s/%s", TableDir, filename);
+        fp = fopen(path, "rb");
+    }
     if (fp && pfile_modify_time) {
         struct stat st;
         if (fstat(fileno(fp), &st) == 0) *pfile_modify_time = st.st_mtime;

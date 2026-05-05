@@ -2,6 +2,12 @@
 #include <ibus.h>
 #include "../gcin-core/gcin-core.h"
 
+/* X11 modifier bitmasks — passed to gcin_core_feed_phrase() which forwards
+   them to feed_phrase() inside libgcin-core (expects X11 values, not IBus). */
+#define ShiftMask   0x0001
+#define ControlMask 0x0004
+#define Mod1Mask    0x0008
+
 typedef struct _GcinEngine      GcinEngine;
 typedef struct _GcinEngineClass GcinEngineClass;
 
@@ -72,6 +78,19 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
         ibus_engine_hide_preedit_text(iengine);
         ibus_engine_hide_lookup_table(iengine);
         return TRUE;
+    }
+
+    /* Alt+Shift: phrase.table lookup — mirrors gcin eve.cpp:1227 */
+    if ((modifiers & (IBUS_MOD1_MASK|IBUS_SHIFT_MASK)) == (IBUS_MOD1_MASK|IBUS_SHIFT_MASK)) {
+        gcin_core_set_commit_cb(on_commit, iengine);
+        return gcin_core_feed_phrase(keyval, Mod1Mask|ShiftMask) ? TRUE : FALSE;
+    }
+
+    /* Ctrl (without Alt): phrase-ctrl.table lookup — mirrors gcin eve.cpp:1293.
+       Returns FALSE if key not in table so app Ctrl+shortcuts pass through. */
+    if ((modifiers & IBUS_CONTROL_MASK) && !(modifiers & IBUS_MOD1_MASK)) {
+        gcin_core_set_commit_cb(on_commit, iengine);
+        if (gcin_core_feed_phrase(keyval, ControlMask)) return TRUE;
     }
 
     /* Re-register callback each keypress so commit fires on the active engine */
