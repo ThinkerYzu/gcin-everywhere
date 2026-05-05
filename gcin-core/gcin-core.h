@@ -23,6 +23,14 @@ int gcin_core_feedkey_cangjie_release(unsigned long keyval, int modifiers);
 /* Feed a keypress to the Zhuyin engine. Same conventions. */
 int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers);
 
+/* Feed a keypress to the Quick (速成/簡易) engine.
+   Uses simplex.gtab — same feedkey_gtab path as Cangjie. */
+int gcin_core_feedkey_quick(unsigned long keyval, int modifiers);
+
+/* Feed a keypress to the Array (行列 ar30) engine.
+   Uses ar30.gtab — same feedkey_gtab path as Cangjie. */
+int gcin_core_feedkey_array(unsigned long keyval, int modifiers);
+
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 

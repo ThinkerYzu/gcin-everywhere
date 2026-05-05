@@ -30,5 +30,25 @@
       <symbol>注</symbol>
       <layout>default</layout>
     </engine>
+    <engine>
+      <name>gcin-quick</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Quick (速成)</longname>
+      <description>Quick/Simplex Traditional Chinese input via gcin engine</description>
+      <rank>99</rank>
+      <symbol>速</symbol>
+      <layout>default</layout>
+    </engine>
+    <engine>
+      <name>gcin-array</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Array (行列)</longname>
+      <description>Array30 Traditional Chinese input via gcin engine</description>
+      <rank>99</rank>
+      <symbol>列</symbol>
+      <layout>default</layout>
+    </engine>
   </engines>
 </component>

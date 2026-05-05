@@ -14,7 +14,7 @@ typedef struct _GcinEngineClass GcinEngineClass;
 struct _GcinEngine {
     IBusEngine       parent;
     IBusLookupTable *table;
-    int              mode;         /* 0=Cangjie, 1=Zhuyin */
+    int              mode;         /* 0=Cangjie, 1=Zhuyin, 2=Quick, 3=Array */
     gboolean         chinese_mode;
 };
 struct _GcinEngineClass { IBusEngineClass parent; };
@@ -37,10 +37,10 @@ static void update_ui(IBusEngine *iengine) {
 
     /* Preedit */
     char preedit[256];
-    if (e->mode == 0)
-        gcin_core_get_preedit(preedit, sizeof(preedit));
-    else
+    if (e->mode == 1)
         gcin_core_get_preedit_zhuyin(preedit, sizeof(preedit));
+    else
+        gcin_core_get_preedit(preedit, sizeof(preedit));  /* gtab: Cangjie, Quick, Array */
     IBusText *pre = ibus_text_new_from_string(preedit);
     ibus_text_append_attribute(pre, IBUS_ATTR_TYPE_UNDERLINE,
                                IBUS_ATTR_UNDERLINE_SINGLE, 0, -1);
@@ -49,9 +49,9 @@ static void update_ui(IBusEngine *iengine) {
     /* Candidates */
     ibus_lookup_table_clear(e->table);
     char cands[16][32];
-    int n = (e->mode == 0)
-        ? gcin_core_get_candidates_cangjie(cands, 16)
-        : gcin_core_get_candidates_zhuyin(cands, 16);
+    int n = (e->mode == 1)
+        ? gcin_core_get_candidates_zhuyin(cands, 16)
+        : gcin_core_get_candidates_cangjie(cands, 16);  /* gtab: Cangjie, Quick, Array */
     for (int i = 0; i < n; i++)
         ibus_lookup_table_append_candidate(e->table,
                                            ibus_text_new_from_string(cands[i]));
@@ -95,9 +95,13 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
 
     /* Re-register callback each keypress so commit fires on the active engine */
     gcin_core_set_commit_cb(on_commit, iengine);
-    int consumed = (e->mode == 0)
-        ? gcin_core_feedkey_cangjie(keyval, modifiers)
-        : gcin_core_feedkey_zhuyin(keyval, modifiers);
+    int consumed;
+    switch (e->mode) {
+        case 1:  consumed = gcin_core_feedkey_zhuyin(keyval, modifiers); break;
+        case 2:  consumed = gcin_core_feedkey_quick(keyval, modifiers);  break;
+        case 3:  consumed = gcin_core_feedkey_array(keyval, modifiers);  break;
+        default: consumed = gcin_core_feedkey_cangjie(keyval, modifiers); break;
+    }
 
     update_ui(iengine);
     return consumed ? TRUE : FALSE;
@@ -108,7 +112,10 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
 static void gcin_engine_enable(IBusEngine *e) {
     GcinEngine *ge = (GcinEngine *)e;
     const gchar *name = ibus_engine_get_name(e);
-    ge->mode = (name && g_str_has_suffix(name, "zhuyin")) ? 1 : 0;
+    if (name && g_str_has_suffix(name, "zhuyin"))      ge->mode = 1;
+    else if (name && g_str_has_suffix(name, "quick"))  ge->mode = 2;
+    else if (name && g_str_has_suffix(name, "array"))  ge->mode = 3;
+    else                                               ge->mode = 0;
     gcin_core_reset();
 }
 static void gcin_engine_disable(IBusEngine *e)   { (void)e; }
@@ -164,6 +171,8 @@ int main(int argc, char **argv) {
     IBusFactory *factory = ibus_factory_new(ibus_bus_get_connection(bus));
     ibus_factory_add_engine(factory, "gcin-cangjie", GCIN_TYPE_ENGINE);
     ibus_factory_add_engine(factory, "gcin-zhuyin",  GCIN_TYPE_ENGINE);
+    ibus_factory_add_engine(factory, "gcin-quick",   GCIN_TYPE_ENGINE);
+    ibus_factory_add_engine(factory, "gcin-array",   GCIN_TYPE_ENGINE);
     ibus_bus_request_name(bus, "org.freedesktop.IBus.Gcin", 0);
     ibus_main();
     return 0;

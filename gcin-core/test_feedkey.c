@@ -235,6 +235,67 @@ static void test_zhuyin_preedit_clears_after_commit(void) {
              "preedit_len=%d candidates=%d", np, nc);
 }
 
+/* ── Quick (速成/簡易) tests ─────────────────────────────────── */
+
+static void test_quick_single_char(void) {
+    /*
+     * Quick (simplex.gtab, space_style=GTAB_space_auto_first_full):
+     * 'k' = 大 radical (first match). Space shows candidates; '1' selects.
+     */
+    reset();
+    gcin_core_feedkey_quick('k', 0);
+    gcin_core_feedkey_quick(K_space, 0);
+    gcin_core_feedkey_quick('1', 0);
+    EXPECT_COMMITTED("大", "quick: k+space+1 commits 大");
+}
+
+static void test_quick_two_char(void) {
+    /*
+     * 'a'+'b' = 日+月 in Quick — multiple matches exist. Candidates are
+     * sorted by tsin use-count in the compiled binary, so the first candidate
+     * is frequency-dependent (not necessarily the first .cin entry).
+     * We verify that something is committed, not a specific character.
+     */
+    reset();
+    gcin_core_feedkey_quick('a', 0);
+    gcin_core_feedkey_quick('b', 0);
+    gcin_core_feedkey_quick(K_space, 0);
+    gcin_core_feedkey_quick('1', 0);
+    EXPECT_COMMITTED_NONEMPTY("quick: ab+space+1 commits a character");
+}
+
+static void test_quick_escape_clears(void) {
+    reset();
+    gcin_core_feedkey_quick('k', 0);
+    gcin_core_feedkey_quick(K_escape, 0);
+    EXPECT_NOTHING_COMMITTED("quick: escape after partial input does not commit");
+}
+
+/* ── Array (行列 ar30) tests ─────────────────────────────────── */
+
+static void test_array_three_key(void) {
+    /*
+     * Array ar30: 'a'+'a'+'a' (code "AAA" compiled to lowercase by gcin2tab)
+     * → only match is 三. In ar30, %endkey includes digits, so the digit key
+     * acts as both endkey (triggers candidate display) and selkey (selects) in
+     * one press. Space is not needed — pressing '1' directly after the code
+     * auto-commits the single match.
+     */
+    reset();
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('1', 0);
+    EXPECT_COMMITTED("三", "array: aaa+1 commits 三");
+}
+
+static void test_array_escape_clears(void) {
+    reset();
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array(K_escape, 0);
+    EXPECT_NOTHING_COMMITTED("array: escape after partial input does not commit");
+}
+
 /* ── Phrase table tests ───────────────────────────────────────── */
 
 static void test_phrase_table(const char *table_dir) {
@@ -288,15 +349,15 @@ int main(void) {
         printf("  missing: %s%s\n",
                file_exists(pho_tab) ? "" : "pho.tab2 ",
                file_exists(cj_gtab) ? "" : "cj.gtab");
-        printf("Build tables and retry:\n");
-        printf("  cd ../gcin && ./configure && make\n");
-        printf("  mkdir /tmp/gcin-tables\n");
-        printf("  ./cintotab data/cj.cin /tmp/gcin-tables/cj.gtab\n");
-        printf("  ./phoconv  data/pho.tab2.src /tmp/gcin-tables/pho.tab\n");
-        printf("  cp tsin /tmp/gcin-tables/\n");
-        printf("  GCIN_TABLE_DIR=/tmp/gcin-tables make test\n");
+        printf("Build tables with: make tables && make test\n");
         return 0;  /* not a failure — tables just not compiled yet */
     }
+
+    char simplex_gtab[512], ar30_gtab[512];
+    snprintf(simplex_gtab, sizeof(simplex_gtab), "%s/simplex.gtab", table_dir);
+    snprintf(ar30_gtab,    sizeof(ar30_gtab),    "%s/ar30.gtab",    table_dir);
+    int have_quick = file_exists(simplex_gtab);
+    int have_array = file_exists(ar30_gtab);
 
     gcin_core_init(table_dir);
 
@@ -317,6 +378,26 @@ int main(void) {
     test_zhuyin_preedit_builds();
     test_zhuyin_candidates_appear_after_tone();
     test_zhuyin_preedit_clears_after_commit();
+
+    printf("\nQuick (速成):\n");
+    if (have_quick) {
+        test_quick_single_char();
+        test_quick_two_char();
+        test_quick_escape_clears();
+    } else {
+        SKIP("quick: k+space+1 commits 大",        "simplex.gtab not found");
+        SKIP("quick: ab+space+1 commits 明",        "simplex.gtab not found");
+        SKIP("quick: escape after partial input",   "simplex.gtab not found");
+    }
+
+    printf("\nArray (行列):\n");
+    if (have_array) {
+        test_array_three_key();
+        test_array_escape_clears();
+    } else {
+        SKIP("array: aaa+1 commits 三",              "ar30.gtab not found");
+        SKIP("array: escape after partial input",   "ar30.gtab not found");
+    }
 
     printf("\nPhrase table (Alt+Shift / Ctrl):\n");
     test_phrase_table(table_dir);

@@ -43,6 +43,10 @@ tables: table-tools
 	mkdir -p $(TABLES)
 	cd $(GCIN) && NO_GTK_INIT=1 ./gcin2tab  data/cj.cin
 	cp $(GCIN)/data/cj.gtab  $(TABLES)/
+	cd $(GCIN) && NO_GTK_INIT=1 ./gcin2tab  data/simplex.cin
+	cp $(GCIN)/data/simplex.gtab $(TABLES)/
+	cd $(GCIN) && NO_GTK_INIT=1 ./gcin2tab  data/ar30.cin
+	cp $(GCIN)/data/ar30.gtab $(TABLES)/
 	cd $(GCIN) && NO_GTK_INIT=1 ./phoa2d    data/pho.tab2.src
 	cp $(GCIN)/data/pho.tab2 $(TABLES)/
 	cd $(GCIN) && NO_GTK_INIT=1 ./tsa2d32   data/tsin.src $(TABLES)/tsin32
