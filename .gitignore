@@ -1,0 +1,9 @@
+tables/
+gcin/gcin2tab
+gcin/phoa2d
+gcin/tsa2d32
+gcin/kbmcv
+gcin-core/*.o
+gcin-core/libgcin-core.a
+gcin-core/test_feedkey
+ibus-engine/ibus-engine-gcin

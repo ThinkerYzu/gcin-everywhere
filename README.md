@@ -56,51 +56,18 @@ git clone --recurse-submodules https://github.com/ThinkerYzu/gcin-everywhere.git
 cd gcin-everywhere
 ```
 
-### 2. Build data tables
-
-gcin's character and phonetic tables must be compiled from source. Build the table
-tools and run them:
+### 2. Build, test, and install
 
 ```bash
-cd gcin-core && make && cd ..
-
-cd gcin
-# Build table tools (no GTK2 required)
-CFLAGS="-x c -std=gnu99 -O2 -Wno-implicit-function-declaration \
-  -DGCIN_CORE_BUILD -DHAVE_CONFIG_H -DUSE_TSIN=1 \
-  -DGCIN_TABLE_DIR=\"/usr/share/gcin\" -DGCIN_BIN_DIR=\"/usr/lib/gcin\" \
-  -I. -I./IMdkit/include -I../gcin-core"
-printf 'void gtk_init(int*a,char***b){}\ntypedef void Display;\nvoid send_gcin_message(Display*d,char*s){}\ntypedef unsigned short phokey_t;\nphokey_t pinyin2phokey(char*s){return 0;}\n' > /tmp/gtk_stub.c
-cc $CFLAGS gcin2tab.cpp /tmp/gtk_stub.c -o gcin2tab -L../gcin-core -lgcin-core -lm
-cc $CFLAGS phoa2d.cpp   /tmp/gtk_stub.c -o phoa2d   -L../gcin-core -lgcin-core -lm
-cc $CFLAGS tsa2d32.cpp  /tmp/gtk_stub.c -o tsa2d32  -L../gcin-core -lgcin-core -lm
-cc $CFLAGS kbmcv.cpp    /tmp/gtk_stub.c -o kbmcv    -L../gcin-core -lgcin-core -lm
-
-# Compile tables
-mkdir -p /tmp/gcin-tables
-NO_GTK_INIT=1 ./gcin2tab data/cj.cin      && cp data/cj.gtab  /tmp/gcin-tables/
-NO_GTK_INIT=1 ./phoa2d   data/pho.tab2.src && cp data/pho.tab2 /tmp/gcin-tables/
-NO_GTK_INIT=1 ./tsa2d32  data/tsin.src /tmp/gcin-tables/tsin32
-NO_GTK_INIT=1 ./kbmcv    data/zo.kbmsrc    && cp data/zo.kbm   /tmp/gcin-tables/
-cp data/gtab.list /tmp/gcin-tables/
-cd ..
+make test     # builds everything, compiles data tables, runs unit tests
+make install  # installs to ~/.local/ (no root required)
 ```
 
-### 3. Run unit tests
+That's it. The top-level `Makefile` handles the full pipeline:
+builds `libgcin-core.a`, compiles the data tables, runs unit tests,
+builds `ibus-engine-gcin`, and installs.
 
-```bash
-cd gcin-core && GCIN_TABLE_DIR=/tmp/gcin-tables make test && cd ..
-# expected: 9 passed, 0 failed
-```
-
-### 4. Install
-
-```bash
-cd ibus-engine
-make install TABLES=/tmp/gcin-tables
-```
-
-This installs everything to `~/.local/` (no root required):
+Installed files:
 
 | File | Destination |
 |------|-------------|
@@ -149,8 +116,7 @@ a tone key. Candidates appear automatically.
 ## Rebuilding after changes
 
 ```bash
-cd ibus-engine
-make install TABLES=/tmp/gcin-tables
+make install
 systemctl --user restart ibus-engine-gcin
 ```
 
