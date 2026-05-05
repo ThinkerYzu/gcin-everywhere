@@ -88,27 +88,30 @@ static void reset(void) {
 
 static void test_cangjie_single_char(void) {
     /*
-     * 'k' = 大 radical in Cangjie 5. Pressing k+space should commit 大
-     * (assuming 大 is a valid one-component character in the table).
-     * If the commit value changes, update the expected string here.
+     * Cangjie 5 (cj.gtab) uses space_style=GTAB_space_auto_first_nofull:
+     * space alone does not select; it sets spc_pressed=1 and shows candidates.
+     * '1' then selects the first candidate.
+     *
+     * 'k' = 大 radical. First candidate for 'k' is 大.
      */
     reset();
     gcin_core_feedkey_cangjie('k', 0);
-    gcin_core_feedkey_cangjie(K_space, 0);
-    EXPECT_COMMITTED("大", "cangjie: k+space commits 大");
+    gcin_core_feedkey_cangjie(K_space, 0);  /* show candidates (spc_pressed=1) */
+    gcin_core_feedkey_cangjie('1', 0);       /* select first candidate */
+    EXPECT_COMMITTED("大", "cangjie: k+space+1 commits 大");
 }
 
 static void test_cangjie_two_char(void) {
     /*
-     * Cangjie code for 大人: k (大 radical) + o (人 radical).
-     * space selects the first candidate.
-     * Expected: 大人 (or another character sharing that code; update if needed).
+     * 'a' + 'b' = 日 + 月 radicals in Cangjie 5 → first candidate is 明.
+     * Verified against cj.gtab: ab -> 明.
      */
     reset();
-    gcin_core_feedkey_cangjie('k', 0);
-    gcin_core_feedkey_cangjie('o', 0);
-    gcin_core_feedkey_cangjie(K_space, 0);
-    EXPECT_COMMITTED_NONEMPTY("cangjie: ko+space commits something");
+    gcin_core_feedkey_cangjie('a', 0);
+    gcin_core_feedkey_cangjie('b', 0);
+    gcin_core_feedkey_cangjie(K_space, 0);  /* spc_pressed=1 */
+    gcin_core_feedkey_cangjie('1', 0);       /* select first */
+    EXPECT_COMMITTED("明", "cangjie: ab+space+1 commits 明");
 }
 
 static void test_cangjie_escape_clears(void) {
@@ -120,13 +123,14 @@ static void test_cangjie_escape_clears(void) {
 }
 
 static void test_cangjie_backspace(void) {
-    /* Backspace erases last input component, commit still works after */
+    /* Backspace erases last component; remaining input still selectable */
     reset();
     gcin_core_feedkey_cangjie('k', 0);
     gcin_core_feedkey_cangjie('o', 0);
-    gcin_core_feedkey_cangjie(K_bs, 0);   /* erase 'o' */
-    gcin_core_feedkey_cangjie(K_space, 0); /* commit 'k' alone */
-    EXPECT_COMMITTED_NONEMPTY("cangjie: backspace then commit still outputs");
+    gcin_core_feedkey_cangjie(K_bs, 0);    /* erase 'o', back to 'k' */
+    gcin_core_feedkey_cangjie(K_space, 0); /* spc_pressed=1 */
+    gcin_core_feedkey_cangjie('1', 0);      /* select first for 'k' alone */
+    EXPECT_COMMITTED_NONEMPTY("cangjie: backspace then select still outputs");
 }
 
 /* ── Zhuyin tests ─────────────────────────────────────────────── */

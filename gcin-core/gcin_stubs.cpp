@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include "gcin-core.h"
 #include "../gcin/gcin.h"
+#include "../gcin/gtab.h"
 #include "../gcin/pho.h"
 #include "../gcin/tsin.h"
 #include "../gcin/gst.h"
@@ -49,8 +50,13 @@ gboolean b_use_full_space = 0;
 
 /* current_CS: gcin tracks the active X11 client.
    IBus engine is single-client; use a static instance. */
-static ClientState _cs  = {0};
+static ClientState _cs;
 ClientState *current_CS = &_cs;
+/* im_state must be GCIN_STATE_CHINESE (2) for feedkey_gtab/feedkey_pho to process keys */
+__attribute__((constructor)) static void init_cs(void) {
+    memset(&_cs, 0, sizeof(_cs));
+    _cs.im_state = 2; /* GCIN_STATE_CHINESE */
+}
 
 /* ── Output callback ──────────────────────────────────────────── */
 static GcinCommitCb g_commit_cb   = NULL;
@@ -81,14 +87,41 @@ void send_ascii(char key) {
 extern void init_TableDir(void);
 extern void load_tab_pho_file(void);
 extern void load_tsin_db(int reload);
+extern void load_setttings(void);       /* note: typo is in gcin source */
+extern void load_gtab_list(int skip_disabled);
+extern void init_gtab(int inmdno);
+
+/* Find first gtab entry whose filename contains needle; return index or -1 */
+static int find_inmd(const char *needle) {
+    for (int i = 0; i < inmdN; i++) {
+        if (inmd[i].filename && strstr(inmd[i].filename, needle))
+            return i;
+    }
+    return -1;
+}
+
+static int g_cangjie_inmd = -1;
+static int g_zhuyin_inmd  = -1;
 
 int gcin_core_init(const char *table_dir) {
-    if (table_dir && *table_dir) {
+    if (table_dir && *table_dir)
         TableDir = (char *)table_dir;
-    }
+    load_setttings();           /* initializes pho_kbm_name, pho_selkey, etc. */
+    gtab_auto_select_by_phrase = 2; /* GTAB_OPTION_NO: commit each char directly, no phrase buffer */
     init_TableDir();
-    load_tab_pho_file();
-    load_tsin_db(0);
+    load_gtab_list(1);          /* populates inmd[] from gtab.list */
+    load_tab_pho_file();        /* loads pho.tab2 / zo.kbm for Zhuyin */
+    load_tsin_db(0);            /* loads tsin32 word-frequency database */
+
+    /* Pre-load Cangjie gtab so cur_inmd is set on first feedkey_cangjie call */
+    g_cangjie_inmd = find_inmd("cj");
+    if (g_cangjie_inmd >= 0) {
+        init_gtab(g_cangjie_inmd);
+        current_CS->in_method  = g_cangjie_inmd;
+        current_CS->tsin_pho_mode = 1;  /* required for feedkey_gtab to process keys */
+    }
+
+    g_zhuyin_inmd = find_inmd("pho");  /* Zhuyin uses method_type_PHO */
     return 0;
 }
 
@@ -98,6 +131,10 @@ extern int feedkey_gtab_release(KeySym key, int kbstate);
 extern int feedkey_pho(KeySym xkey, int kbstate);
 
 int gcin_core_feedkey_cangjie(unsigned long keyval, int modifiers) {
+    if (g_cangjie_inmd >= 0 && current_CS->in_method != g_cangjie_inmd) {
+        current_CS->in_method = g_cangjie_inmd;
+        init_gtab(g_cangjie_inmd);
+    }
     return feedkey_gtab((KeySym)keyval, modifiers);
 }
 
@@ -110,7 +147,10 @@ int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers) {
 }
 
 void gcin_core_reset(void) {
-    /* TODO: call gcin reset functions when identified */
+    extern void ClrIn(void);
+    extern void clrin_pho(void);
+    ClrIn();        /* clears ggg.spc_pressed, ggg.ci, composition state */
+    clrin_pho();    /* clears Zhuyin phonetic buffer */
 }
 
 /* ── Utility implementations from excluded gcin-common.cpp ───── */
