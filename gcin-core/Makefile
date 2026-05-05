@@ -40,7 +40,7 @@ CORE_SRCS := gcin_stubs.cpp
 OBJS := $(patsubst %.cpp,%.o,$(notdir $(GCIN_SRCS))) \
         $(patsubst %.cpp,%.o,$(CORE_SRCS))
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: libgcin-core.a
 
@@ -52,5 +52,11 @@ vpath %.cpp $(GCIN) .
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $< -o $@
 
+test: test_feedkey
+	./test_feedkey
+
+test_feedkey: test_feedkey.c libgcin-core.a
+	$(CC) -g -O2 -I. $< -o $@ -L. -lgcin-core -lm
+
 clean:
-	rm -f *.o libgcin-core.a
+	rm -f *.o libgcin-core.a test_feedkey
