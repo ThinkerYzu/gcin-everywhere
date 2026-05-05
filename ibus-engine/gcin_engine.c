@@ -64,6 +64,16 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
     GcinEngine *e = (GcinEngine *)iengine;
     if (!e->chinese_mode) return FALSE;
 
+    /* Shift+Space: toggle full-width character mode, same as gcin's Shift+Space
+       binding (toggle_half_full_char in eve.cpp). Clear any pending composition. */
+    if (keyval == IBUS_space && (modifiers & IBUS_SHIFT_MASK)) {
+        gcin_core_toggle_full_width();
+        gcin_core_reset();
+        ibus_engine_hide_preedit_text(iengine);
+        ibus_engine_hide_lookup_table(iengine);
+        return TRUE;
+    }
+
     /* Re-register callback each keypress so commit fires on the active engine */
     gcin_core_set_commit_cb(on_commit, iengine);
     int consumed = (e->mode == 0)

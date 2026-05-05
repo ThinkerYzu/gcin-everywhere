@@ -195,6 +195,23 @@ static void test_zhuyin_candidates_appear_after_tone(void) {
     gcin_core_reset();
 }
 
+static void test_cangjie_full_width(void) {
+    /* default: half-width — comma is not consumed by the engine (feedkey
+       returns 0); IBus passes it to the application directly, so our
+       commit callback is never fired */
+    reset();
+    gcin_core_feedkey_cangjie(',', 0);
+    EXPECT_NOTHING_COMMITTED("cangjie: comma in half-width mode not consumed by engine");
+
+    /* toggle to full-width — comma becomes ， */
+    reset();
+    gcin_core_toggle_full_width();
+    gcin_core_feedkey_cangjie(',', 0);
+    EXPECT_COMMITTED("，", "cangjie: comma in full-width mode commits ，");
+
+    gcin_core_toggle_full_width();  /* restore half-width for subsequent tests */
+}
+
 static void test_zhuyin_preedit_clears_after_commit(void) {
     /* After commit, preedit and candidates are empty */
     reset();
@@ -251,6 +268,9 @@ int main(void) {
     test_cangjie_two_char();
     test_cangjie_escape_clears();
     test_cangjie_backspace();
+
+    printf("\nCangjie (full-width mode):\n");
+    test_cangjie_full_width();
 
     printf("\nZhuyin:\n");
     test_zhuyin_tone_triggers_candidates();

@@ -26,6 +26,12 @@ int gcin_core_feedkey_zhuyin(unsigned long keyval, int modifiers);
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 
+/* Toggle full-width character mode (Shift+Space in gcin).
+   In full-width mode all printable ASCII is converted to full-width Unicode
+   via gcin's fullchar[] table before being committed. Returns new state. */
+int gcin_core_toggle_full_width(void);
+int gcin_core_get_full_width(void);
+
 /* Get current Cangjie preedit (key-name glyphs typed so far).
    Returns byte count written to out (not including NUL). */
 int gcin_core_get_preedit(char *out, int outlen);

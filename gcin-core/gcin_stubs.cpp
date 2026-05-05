@@ -212,6 +212,20 @@ void gcin_core_reset(void) {
     clrin_pho();    /* clears Zhuyin phonetic buffer */
 }
 
+/* ── Full-width character mode ────────────────────────────────── */
+
+/* Shift+Space toggles full-width mode in gcin (toggle_half_full_char in eve.cpp).
+   We expose a simple API rather than copying the full toggle function, which
+   has display-update side effects (disp_im_half_full etc.) not relevant here. */
+int gcin_core_toggle_full_width(void) {
+    current_CS->b_half_full_char = !current_CS->b_half_full_char;
+    return current_CS->b_half_full_char;
+}
+
+int gcin_core_get_full_width(void) {
+    return current_CS->b_half_full_char;
+}
+
 /* ── Utility implementations from excluded gcin-common.cpp ───── */
 
 /* Flip alpha KeySym case: lowercase ↔ uppercase (X11 range 0x41-0x7a) */
@@ -275,7 +289,22 @@ struct WSP_S;
 void create_win_save_phrase(struct WSP_S *wsp, int wspN) { (void)wsp; (void)wspN; }
 
 /* ── UI stubs — boolean ───────────────────────────────────────── */
-gboolean full_char_proc(KeySym k)          { (void)k; return FALSE; }
+
+/* full_char_proc: copied from eve.cpp (excluded — contains XTest, GDK, and
+   hundreds of X11-dependent functions that can't be guarded economically).
+   The function itself has no X11/GTK calls; it only uses fullchar[], utf8cpy(),
+   send_text(), and gcin state already available in the core build.
+   Simplified: TSIN-mode and phrase-buffer branches are both inactive in our
+   build (current_method_type() returns 0, phrase buffer disabled), so they
+   are omitted. */
+gboolean full_char_proc(KeySym keysym) {
+    char *s = half_char_to_full_char(keysym);
+    if (!s) return 0;
+    char tt[CH_SZ + 1];
+    utf8cpy(tt, s);
+    send_text(tt);
+    return 1;
+}
 gboolean gcin_edit_display_ap_only(void)   { return FALSE; }
 gboolean gcin_display_on_the_spot_key(void){ return FALSE; }
 
@@ -293,7 +322,16 @@ gboolean win_sym_page_up(void)      { return FALSE; }
 gboolean win_sym_page_down(void)    { return FALSE; }
 
 /* ── Functions from excluded gcin.cpp ───────────────────────── */
-char *half_char_to_full_char(KeySym xkey) { (void)xkey; return NULL; }
+
+/* half_char_to_full_char: copied from gcin.cpp (excluded — defines globals
+   like dpy/root/win_xl that would conflict with our stubs, plus main() and
+   X11/XIM setup code). The function itself is a one-liner into fullchar[]
+   which is already compiled from fullchar.cpp. */
+char *half_char_to_full_char(KeySym xkey) {
+    extern unich_t *fullchar[];
+    if (xkey < ' ' || xkey > 127) return NULL;
+    return fullchar[xkey - ' '];
+}
 
 /* ── Pinyin stubs (only needed for Pinyin mode) ─────────────── */
 void load_pin_juyin(void)                    {}
