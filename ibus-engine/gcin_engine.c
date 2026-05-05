@@ -76,7 +76,12 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
 
 /* ── Engine lifecycle ────────────────────────────────────────────── */
 
-static void gcin_engine_enable(IBusEngine *e)    { (void)e; }
+static void gcin_engine_enable(IBusEngine *e) {
+    GcinEngine *ge = (GcinEngine *)e;
+    const gchar *name = ibus_engine_get_name(e);
+    ge->mode = (name && g_str_has_suffix(name, "zhuyin")) ? 1 : 0;
+    gcin_core_reset();
+}
 static void gcin_engine_disable(IBusEngine *e)   { (void)e; }
 
 static void gcin_engine_reset(IBusEngine *e) {
@@ -103,8 +108,7 @@ static void gcin_engine_class_init(GcinEngineClass *klass) {
 static void gcin_engine_init(GcinEngine *e) {
     e->table        = ibus_lookup_table_new(10, 0, TRUE, TRUE);
     e->chinese_mode = TRUE;
-    const gchar *name = ibus_engine_get_name(IBUS_ENGINE(e));
-    e->mode = (name && g_str_has_suffix(name, "zhuyin")) ? 1 : 0;
+    e->mode         = 0;  /* set correctly in gcin_engine_enable() */
     g_object_ref_sink(e->table);
 }
 
