@@ -1,0 +1,3 @@
+[submodule "gcin"]
+	path = gcin
+	url = https://github.com/pkg-ime/gcin
