@@ -14,7 +14,7 @@ typedef struct _GcinEngineClass GcinEngineClass;
 struct _GcinEngine {
     IBusEngine       parent;
     IBusLookupTable *table;
-    int              mode;         /* 0=Cangjie, 1=Zhuyin, 2=Quick, 3=Array, 4=CJ5 */
+    int              mode;         /* 0=Cangjie, 1=Zhuyin, 2=Quick, 3=Array, 4=CJ5, 5=SimplexPunc */
     gboolean         chinese_mode;
 };
 struct _GcinEngineClass { IBusEngineClass parent; };
@@ -100,8 +100,9 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
         case 1:  consumed = gcin_core_feedkey_zhuyin(keyval, modifiers);  break;
         case 2:  consumed = gcin_core_feedkey_quick(keyval, modifiers);   break;
         case 3:  consumed = gcin_core_feedkey_array(keyval, modifiers);   break;
-        case 4:  consumed = gcin_core_feedkey_cj5(keyval, modifiers);     break;
-        default: consumed = gcin_core_feedkey_cangjie(keyval, modifiers); break;
+        case 4:  consumed = gcin_core_feedkey_cj5(keyval, modifiers);          break;
+        case 5:  consumed = gcin_core_feedkey_simplex_punc(keyval, modifiers); break;
+        default: consumed = gcin_core_feedkey_cangjie(keyval, modifiers);      break;
     }
 
     update_ui(iengine);
@@ -116,8 +117,9 @@ static void gcin_engine_enable(IBusEngine *e) {
     if (name && g_str_has_suffix(name, "zhuyin"))      ge->mode = 1;
     else if (name && g_str_has_suffix(name, "quick"))  ge->mode = 2;
     else if (name && g_str_has_suffix(name, "array"))  ge->mode = 3;
-    else if (name && g_str_has_suffix(name, "cj5"))    ge->mode = 4;
-    else                                               ge->mode = 0;
+    else if (name && g_str_has_suffix(name, "cj5"))           ge->mode = 4;
+    else if (name && g_str_has_suffix(name, "simplex-punc"))  ge->mode = 5;
+    else                                                       ge->mode = 0;
     gcin_core_reset();
 }
 static void gcin_engine_disable(IBusEngine *e)   { (void)e; }
@@ -175,7 +177,8 @@ int main(int argc, char **argv) {
     ibus_factory_add_engine(factory, "gcin-zhuyin",  GCIN_TYPE_ENGINE);
     ibus_factory_add_engine(factory, "gcin-quick",   GCIN_TYPE_ENGINE);
     ibus_factory_add_engine(factory, "gcin-array",   GCIN_TYPE_ENGINE);
-    ibus_factory_add_engine(factory, "gcin-cj5",     GCIN_TYPE_ENGINE);
+    ibus_factory_add_engine(factory, "gcin-cj5",          GCIN_TYPE_ENGINE);
+    ibus_factory_add_engine(factory, "gcin-simplex-punc",  GCIN_TYPE_ENGINE);
     ibus_bus_request_name(bus, "org.freedesktop.IBus.Gcin", 0);
     ibus_main();
     return 0;

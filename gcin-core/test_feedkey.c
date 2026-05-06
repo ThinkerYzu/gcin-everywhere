@@ -296,6 +296,27 @@ static void test_array_escape_clears(void) {
     EXPECT_NOTHING_COMMITTED("array: escape after partial input does not commit");
 }
 
+/* ── Simplex+Punc (標點簡易) tests ───────────────────────────── */
+
+static void test_simplex_punc_single_char(void) {
+    /*
+     * simplex-punc.cin maps the same radical keys as simplex.
+     * 'k' = 大 radical; space_style 4 shows candidates on space, '1' selects.
+     */
+    reset();
+    gcin_core_feedkey_simplex_punc('k', 0);
+    gcin_core_feedkey_simplex_punc(K_space, 0);
+    gcin_core_feedkey_simplex_punc('1', 0);
+    EXPECT_COMMITTED("大", "simplex-punc: k+space+1 commits 大");
+}
+
+static void test_simplex_punc_escape_clears(void) {
+    reset();
+    gcin_core_feedkey_simplex_punc('k', 0);
+    gcin_core_feedkey_simplex_punc(K_escape, 0);
+    EXPECT_NOTHING_COMMITTED("simplex-punc: escape after partial input does not commit");
+}
+
 /* ── CJ5 (倉頡五代) tests ─────────────────────────────────────── */
 
 static void test_cj5_single_char(void) {
@@ -388,13 +409,15 @@ int main(void) {
         return 0;  /* not a failure — tables just not compiled yet */
     }
 
-    char simplex_gtab[512], ar30_gtab[512], cj5_gtab[512];
-    snprintf(simplex_gtab, sizeof(simplex_gtab), "%s/simplex.gtab", table_dir);
-    snprintf(ar30_gtab,    sizeof(ar30_gtab),    "%s/ar30.gtab",    table_dir);
-    snprintf(cj5_gtab,     sizeof(cj5_gtab),     "%s/cj5.gtab",     table_dir);
-    int have_quick = file_exists(simplex_gtab);
-    int have_array = file_exists(ar30_gtab);
-    int have_cj5   = file_exists(cj5_gtab);
+    char simplex_gtab[512], ar30_gtab[512], cj5_gtab[512], simplex_punc_gtab[512];
+    snprintf(simplex_gtab,      sizeof(simplex_gtab),      "%s/simplex.gtab",      table_dir);
+    snprintf(ar30_gtab,         sizeof(ar30_gtab),         "%s/ar30.gtab",         table_dir);
+    snprintf(cj5_gtab,          sizeof(cj5_gtab),          "%s/cj5.gtab",          table_dir);
+    snprintf(simplex_punc_gtab, sizeof(simplex_punc_gtab), "%s/simplex-punc.gtab", table_dir);
+    int have_quick        = file_exists(simplex_gtab);
+    int have_array        = file_exists(ar30_gtab);
+    int have_cj5          = file_exists(cj5_gtab);
+    int have_simplex_punc = file_exists(simplex_punc_gtab);
 
     gcin_core_init(table_dir);
 
@@ -434,6 +457,15 @@ int main(void) {
     } else {
         SKIP("array: aaa+1 commits 三",              "ar30.gtab not found");
         SKIP("array: escape after partial input",   "ar30.gtab not found");
+    }
+
+    printf("\nSimplex+Punc (標點簡易):\n");
+    if (have_simplex_punc) {
+        test_simplex_punc_single_char();
+        test_simplex_punc_escape_clears();
+    } else {
+        SKIP("simplex-punc: k+space+1 commits 大",     "simplex-punc.gtab not found");
+        SKIP("simplex-punc: escape after partial input", "simplex-punc.gtab not found");
     }
 
     printf("\nCJ5 (倉頡五代):\n");

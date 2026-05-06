@@ -60,5 +60,15 @@
       <symbol>五</symbol>
       <layout>default</layout>
     </engine>
+    <engine>
+      <name>gcin-simplex-punc</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Simplex+Punct (標點簡易)</longname>
+      <description>Quick/Simplex with punctuation via gcin engine</description>
+      <rank>99</rank>
+      <symbol>標</symbol>
+      <layout>default</layout>
+    </engine>
   </engines>
 </component>

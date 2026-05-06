@@ -35,6 +35,10 @@ int gcin_core_feedkey_array(unsigned long keyval, int modifiers);
    Uses cj5.gtab — same feedkey_gtab path as Cangjie. */
 int gcin_core_feedkey_cj5(unsigned long keyval, int modifiers);
 
+/* Feed a keypress to the Simplex+Punctuation (標點簡易) engine.
+   Uses simplex-punc.gtab — same feedkey_gtab path as Cangjie. */
+int gcin_core_feedkey_simplex_punc(unsigned long keyval, int modifiers);
+
 /* Reset engine state (e.g. on focus loss) */
 void gcin_core_reset(void);
 
