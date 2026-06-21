@@ -2,14 +2,17 @@
 
 gcin-everywhere brings [gcin](https://github.com/pkg-ime/gcin)'s Traditional Chinese
 input methods to modern GNOME/Wayland desktops via IBus. It wraps gcin's battle-tested
-Cangjie (倉頡) and Zhuyin (注音/Bopomofo) engines — preserving the exact key sequences
-and character tables that long-time gcin users rely on — without rewriting any input
-logic.
+input engines — preserving the exact key sequences and character tables that long-time
+gcin users rely on — without rewriting any input logic.
 
 gcin was the standard Traditional Chinese IME on Linux for many years. When GNOME moved
 to Wayland, gcin stopped working. This project fills that gap.
 
-**Status:** Phase 1 complete — Cangjie and Zhuyin work on GNOME/Wayland.
+**Status:** Six input methods plus a unified switcher, all working on GNOME/Wayland —
+Cangjie (倉頡), CJ5 (倉頡五代), Zhuyin (注音/Bopomofo), Quick (速成), Array (行列),
+Simplex+Punctuation (標點簡易), and **gcin-everywhere**, a single engine that switches
+between them in place via `Ctrl+Alt+<digit>` and toggles English with `Ctrl+Space` —
+just like classic gcin.
 
 ---
 
@@ -67,21 +70,27 @@ That's it. The top-level `Makefile` handles the full pipeline:
 builds `libgcin-core.a`, compiles the data tables, runs unit tests,
 builds `ibus-engine-gcin`, and installs.
 
+`make install` prompts for **sudo once** — the IBus component XML must go in the system
+directory (see note below). Everything else stays user-local.
+
 Installed files:
 
 | File | Destination |
 |------|-------------|
 | `ibus-engine-gcin` | `~/.local/lib/ibus-gcin/` |
 | Data tables | `~/.local/share/gcin/` |
-| Component XML | `~/.local/share/ibus/component/gcin.xml` |
+| Component XML | `/usr/share/ibus/component/gcin.xml` (system — needs sudo) |
 | Systemd service | `~/.config/systemd/user/ibus-engine-gcin.service` |
 
 The systemd service is enabled and started automatically. The engine starts at login
 and restarts on failure.
 
-> **Note:** GNOME does not auto-spawn user-local IBus engines on demand, so the systemd
-> service is required. System-wide installation (`sudo make install PREFIX=/usr`) would
-> allow GNOME to auto-spawn the engine without a service, but is not necessary.
+> **Note:** ibus-daemon only scans the **system** component directories
+> (`/usr/share/ibus/component`), not `~/.local/share/ibus/component`, so the component XML
+> must be installed there (hence the sudo step) or the engines never appear in
+> `ibus list-engine` / the GNOME picker. The engine *binary* itself stays user-local and
+> is launched by the systemd service (GNOME does not auto-spawn user-local engines). The
+> component dir is overridable: `make install COMPDIR=/some/dir`.
 
 ---
 
@@ -89,8 +98,11 @@ and restarts on failure.
 
 1. Open **Settings → Keyboard → Input Sources**
 2. Click **+** → search "Chinese (Traditional)"
-3. Add **gcin Cangjie (倉頡)** and/or **gcin Zhuyin (注音)**
-4. Switch engines with **Super+Space**
+3. Add the engines you want. For the all-in-one experience, add **gcin Everywhere
+   (全能切換)** — it covers every method via hotkeys. Or add any of the single-method
+   engines: **gcin Cangjie (倉頡)**, **gcin Cangjie 5 (倉頡五代)**, **gcin Zhuyin (注音)**,
+   **gcin Quick (速成)**, **gcin Array (行列)**, **gcin Simplex+Punct (標點簡易)**.
+4. Switch between input sources with **Super+Space**.
 
 ---
 
@@ -110,6 +122,37 @@ a tone key. Candidates appear automatically.
 |------|--------|
 | `j` `u` `4` `1` | 住 (or other ㄓㄨˋ character) |
 | `m` `4` `1` | 妹 (or other ㄇˋ character) |
+
+### gcin Everywhere (全能切換) — switch methods without leaving the engine
+
+With the **gcin Everywhere** source active, switch input method in place with
+`Ctrl+Alt+<digit>` (mirrors classic gcin's hotkeys), and toggle English with
+`Ctrl+Space`:
+
+| Hotkey | Method |
+|--------|--------|
+| `Ctrl+Alt+1` | 倉頡 Cangjie |
+| `Ctrl+Alt+2` | 倉五 CJ5 |
+| `Ctrl+Alt+3` | 注音 Zhuyin |
+| `Ctrl+Alt+4` | 速成 Quick |
+| `Ctrl+Alt+5` | 標點簡易 SimplexPunc |
+| `Ctrl+Alt+8` | 行列 Array |
+| `Ctrl+Space` | Toggle Chinese ↔ English (resumes the last method) |
+
+The GNOME panel symbol shows the active method (倉/五/注/速/標/列), or 英 in English mode.
+
+> **Important — free up `Ctrl+Space`:** GNOME/mutter intercepts keyboard shortcuts before
+> the IBus engine, so the `Ctrl+Space` English toggle only works if no desktop shortcut
+> binds plain `Ctrl+Space`. Move them off it once:
+> ```bash
+> gsettings set org.gnome.desktop.wm.keybindings switch-input-source "['<Shift><Control>space']"
+> gsettings set org.gnome.desktop.wm.keybindings switch-input-source-backward "[]"
+> gsettings set org.freedesktop.ibus.general.hotkey trigger \
+>   "['Zenkaku_Hankaku', 'Alt+Kanji', 'Alt+grave', 'Hangul', 'Alt+Release+Alt_R']"
+> ```
+> `wm.keybindings` apply immediately; the IBus `trigger` change takes effect after you log
+> out and back in. (A symmetric "two presses to switch" is the sign `Ctrl+Space` is still
+> double-bound.)
 
 ---
 
@@ -140,7 +183,10 @@ ibus-engine/        IBus wrapper
 
 ## Future work
 
-- **Phase 2:** Additional input methods — Quick (速成), Array (行列), Dayi (大易)
-- **Phase 3:** Windows via Text Services Framework (TSF)
-- **Phase 3:** macOS via Input Method Kit (IMKit)
+- **Windows** via Text Services Framework (TSF)
+- **macOS** via Input Method Kit (IMKit)
+- **More methods:** Dayi (大易), Buxiemi (嘸蝦米) — pending source tables
 - **Packaging:** `.deb` / `.rpm` package for easier installation
+
+Done: Cangjie, CJ5, Zhuyin, Quick, Array, Simplex+Punctuation, and the unified
+gcin-everywhere switcher (`Ctrl+Alt+<digit>` + `Ctrl+Space` English toggle).
