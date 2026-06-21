@@ -19,7 +19,11 @@ LDFLAGS := $(IBUS_LIBS) -L$(GCIN_CORE) -lgcin-core -lm
 PREFIX  ?= $(HOME)/.local
 BINDIR   = $(PREFIX)/lib/ibus-gcin
 DATADIR  = $(PREFIX)/share/gcin
-COMPDIR  = $(PREFIX)/share/ibus/component
+# IBus only scans component XML under the SYSTEM data dirs (XDG_DATA_DIRS), NOT
+# ~/.local/share/ibus/component — so the component file MUST go in the system
+# path or the engines never appear in `ibus list-engine` / the GNOME picker.
+# The binary + service stay user-local; the component just points <exec> at them.
+COMPDIR ?= /usr/share/ibus/component
 TABLES   ?= /tmp/gcin-tables
 SYSTEMD  ?= $(HOME)/.config/systemd/user
 
@@ -34,15 +38,23 @@ $(GCIN_CORE)/libgcin-core.a:
 	$(MAKE) -C $(GCIN_CORE)
 
 install: all
-	mkdir -p $(BINDIR) $(DATADIR) $(COMPDIR) $(SYSTEMD)
+	mkdir -p $(BINDIR) $(DATADIR) $(SYSTEMD)
 	install -m 755 ibus-engine-gcin $(BINDIR)/ibus-engine-gcin
 	cp $(TABLES)/* $(DATADIR)/
 	sed 's|/usr/lib/ibus-gcin/ibus-engine-gcin|$(BINDIR)/ibus-engine-gcin|' \
-	    component/gcin.xml > $(COMPDIR)/gcin.xml
+	    component/gcin.xml > /tmp/gcin-component.xml
+	# Component XML must live in the system dir (see COMPDIR note) — needs sudo.
+	sudo install -d $(COMPDIR)
+	sudo install -m 644 /tmp/gcin-component.xml $(COMPDIR)/gcin.xml
+	rm -f /tmp/gcin-component.xml
 	sed 's|ExecStart=.*|ExecStart=$(BINDIR)/ibus-engine-gcin|' \
 	    ibus-engine-gcin.service > $(SYSTEMD)/ibus-engine-gcin.service
 	systemctl --user enable --now ibus-engine-gcin.service
-	@echo "Installed to $(PREFIX)."
+	# Refresh IBus's registry cache and reload so the (re)installed engines appear.
+	-ibus write-cache
+	-ibus restart
+	@echo "Installed: binary+service in $(PREFIX), component in $(COMPDIR)."
+	@echo "If new engines don't appear in the GNOME picker, log out and back in."
 
 clean:
 	rm -f ibus-engine-gcin

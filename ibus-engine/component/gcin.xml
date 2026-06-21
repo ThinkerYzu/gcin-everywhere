@@ -70,5 +70,15 @@
       <symbol>標</symbol>
       <layout>default</layout>
     </engine>
+    <engine>
+      <name>gcin-everywhere</name>
+      <language>zh_TW</language>
+      <license>GPL</license>
+      <longname>gcin Everywhere (全能切換)</longname>
+      <description>Unified gcin engine — switch input method in place via Ctrl+Alt+digit (1=倉頡 2=倉五 3=注音 4=速成 5=標點簡易 8=行列)</description>
+      <rank>99</rank>
+      <symbol>全</symbol>
+      <layout>default</layout>
+    </engine>
   </engines>
 </component>

@@ -352,6 +352,50 @@ static void test_cj5_escape_clears(void) {
     EXPECT_NOTHING_COMMITTED("cj5: escape after partial input does not commit");
 }
 
+/* ── Method-switch tests (gcin-everywhere Ctrl+Alt+digit) ─────────
+ *
+ * The unified engine switches methods in place: on Ctrl+Alt+digit it calls
+ * gcin_core_reset() then routes subsequent keys to the new method's feedkey
+ * function. These tests reproduce that sequence at the core level to guard
+ * against stale init_gtab/in_method state leaking across a switch.
+ */
+
+static void test_switch_cangjie_to_array(void) {
+    /* Begin composing in Cangjie, switch (reset) to Array mid-composition,
+       then Array must compose correctly. */
+    reset();
+    gcin_core_feedkey_cangjie('k', 0);   /* partial Cangjie input */
+    reset();                             /* simulates Ctrl+Alt+8 switch */
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('1', 0);
+    EXPECT_COMMITTED("三", "switch: cangjie→array (aaa+1) commits 三");
+}
+
+static void test_switch_roundtrip(void) {
+    /* Switch through several methods back-to-back; each must still work. */
+    reset();
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('a', 0);
+    gcin_core_feedkey_array('1', 0);
+    EXPECT_COMMITTED("三", "switch: array commits 三 (round-trip leg 1)");
+
+    reset();                             /* switch back to Cangjie */
+    gcin_core_feedkey_cangjie('k', 0);
+    gcin_core_feedkey_cangjie(K_space, 0);
+    gcin_core_feedkey_cangjie('1', 0);
+    EXPECT_COMMITTED("大", "switch: array→cangjie (k+space+1) commits 大");
+
+    reset();                             /* switch to CJ5 */
+    gcin_core_feedkey_cj5('a', 0);
+    gcin_core_feedkey_cj5('b', 0);
+    gcin_core_feedkey_cj5(K_space, 0);
+    gcin_core_feedkey_cj5('1', 0);
+    EXPECT_COMMITTED("明", "switch: cangjie→cj5 (ab+space+1) commits 明");
+}
+
 /* ── Phrase table tests ───────────────────────────────────────── */
 
 static void test_phrase_table(const char *table_dir) {
@@ -477,6 +521,17 @@ int main(void) {
         SKIP("cj5: k+space+1 commits 大",          "cj5.gtab not found");
         SKIP("cj5: ab+space+1 commits 明",          "cj5.gtab not found");
         SKIP("cj5: escape after partial input",     "cj5.gtab not found");
+    }
+
+    printf("\nMethod switching (gcin-everywhere Ctrl+Alt+digit):\n");
+    if (have_array && have_cj5) {
+        test_switch_cangjie_to_array();
+        test_switch_roundtrip();
+    } else {
+        SKIP("switch: cangjie→array (aaa+1) commits 三",      "ar30.gtab/cj5.gtab not found");
+        SKIP("switch: array commits 三 (round-trip leg 1)",   "ar30.gtab/cj5.gtab not found");
+        SKIP("switch: array→cangjie (k+space+1) commits 大",  "ar30.gtab/cj5.gtab not found");
+        SKIP("switch: cangjie→cj5 (ab+space+1) commits 明",   "ar30.gtab/cj5.gtab not found");
     }
 
     printf("\nPhrase table (Alt+Shift / Ctrl):\n");
