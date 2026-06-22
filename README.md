@@ -163,6 +163,13 @@ With the **gcin Everywhere** source active, switch input method in place with
 | `Ctrl+Alt+8` | 行列 Array |
 | `Ctrl+Space` | Toggle Chinese ↔ English (resumes the last method) |
 
+**Starts in English on every focus.** When gcin Everywhere is active, each newly-focused text
+field starts in **English** — switch to another window (or click into a different field) and
+you're in English passthrough, not whatever Chinese method you were last using. Your selected
+method is remembered, so `Ctrl+Space` (or `Ctrl+Alt+<digit>`) resumes it. This is deliberate:
+IBus tells the engine *that* focus changed but not *which* window got it, so the reset applies
+to any focus change — the familiar per-field behavior of classic IMEs.
+
 **Seeing the active method (GNOME panel indicator).** Because gcin-everywhere is a
 *single* engine, GNOME Shell's built-in input indicator only shows its fixed component
 symbol (全) and can't tell you which method is active — GNOME ignores the live

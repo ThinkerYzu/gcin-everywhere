@@ -279,12 +279,24 @@ static void gcin_engine_disable(IBusEngine *e) {
     if (ge->allow_switch) write_state(ge, FALSE);
 }
 
-/* IBus clears panel properties on focus change; re-register ours on focus-in. */
+/* IBus clears panel properties on focus change; re-register ours on focus-in.
+   The unified engine also resets to English on every focus-in: each newly-focused
+   text field (a different window, a different field, or re-entering one) starts in
+   English passthrough. IBus exposes focus, not window identity, so this fires on any
+   focus gain — the classic per-context IME behavior. The selected method (ge->mode)
+   is preserved, so Ctrl+Space / Ctrl+Alt+digit resumes it; update_property() then
+   shows 英 in the panel and state file. */
 static void gcin_engine_focus_in(IBusEngine *e) {
     GcinEngine *ge = (GcinEngine *)e;
-    if (ge->allow_switch && ge->props) {
-        ibus_engine_register_properties(e, ge->props);
-        update_property(ge);
+    if (ge->allow_switch) {
+        ge->chinese_mode = FALSE;
+        gcin_core_reset();
+        ibus_engine_hide_preedit_text(e);
+        ibus_engine_hide_lookup_table(e);
+        if (ge->props) {
+            ibus_engine_register_properties(e, ge->props);
+            update_property(ge);
+        }
     }
 }
 
