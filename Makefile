@@ -13,7 +13,11 @@ TOOL_LINK := -L$(CORE) -lgcin-core -lm
 
 GTK_STUB := /tmp/gcin-everywhere-gtk-stub.c
 
-.PHONY: all core engine table-tools tables test install clean
+EXT_UUID := gcin-everywhere@gcin.dev
+EXT_SRC  := gnome-extension/$(EXT_UUID)
+EXT_DEST := $(HOME)/.local/share/gnome-shell/extensions/$(EXT_UUID)
+
+.PHONY: all core engine table-tools tables test install install-extension clean
 
 all: core engine
 
@@ -65,8 +69,36 @@ tables: table-tools
 test: core tables
 	$(MAKE) -C $(CORE) test GCIN_TABLE_DIR=$(TABLES)
 
-install: engine tables
+install: engine tables install-extension
 	$(MAKE) -C ibus-engine install TABLES=$(TABLES)
+
+# GNOME Shell indicator extension — shows the active method in the top panel.
+# Installed only on GNOME (detected via the gnome-shell binary); skipped elsewhere,
+# where the IBus property already drives the panel. User-local (no sudo).
+# Also auto-enables by adding the UUID to GNOME's enabled-extensions list — this
+# works even before the shell has scanned the new extension (unlike
+# `gnome-extensions enable`, which would error). The user only needs to log out/in
+# on Wayland for the shell to load it. Force install with FORCE_EXTENSION=1.
+install-extension:
+	@if [ -n "$(FORCE_EXTENSION)" ] || command -v gnome-shell >/dev/null 2>&1; then \
+	    mkdir -p $(EXT_DEST); \
+	    cp -r $(EXT_SRC)/* $(EXT_DEST)/; \
+	    echo "Installed GNOME extension to $(EXT_DEST)."; \
+	    if command -v gsettings >/dev/null 2>&1; then \
+	        EN=$$(gsettings get org.gnome.shell enabled-extensions 2>/dev/null || echo "@as []"); \
+	        case "$$EN" in \
+	            *"'$(EXT_UUID)'"*) echo "Already enabled in GNOME." ;; \
+	            "@as []"|"[]") gsettings set org.gnome.shell enabled-extensions "['$(EXT_UUID)']" && echo "Enabled in GNOME." ;; \
+	            *) gsettings set org.gnome.shell enabled-extensions "$${EN%]}, '$(EXT_UUID)']" && echo "Enabled in GNOME." ;; \
+	        esac; \
+	        echo ">>> Log out and back in for the indicator to appear (Wayland loads new extensions only at login)."; \
+	    else \
+	        echo "Enable it: gnome-extensions enable $(EXT_UUID)  (log out/in on Wayland)."; \
+	    fi; \
+	else \
+	    echo "No GNOME Shell detected — skipping the panel-indicator extension."; \
+	    echo "(Force it with: make install-extension FORCE_EXTENSION=1)"; \
+	fi
 
 # ── Clean ────────────────────────────────────────────────────────────
 

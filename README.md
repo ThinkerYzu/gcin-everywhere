@@ -81,6 +81,7 @@ Installed files:
 | Data tables | `~/.local/share/gcin/` |
 | Component XML | `/usr/share/ibus/component/gcin.xml` (system — needs sudo) |
 | Systemd service | `~/.config/systemd/user/ibus-engine-gcin.service` |
+| GNOME Shell extension | `~/.local/share/gnome-shell/extensions/gcin-everywhere@gcin.dev/` (GNOME only) |
 
 The systemd service is enabled and started automatically. The engine starts at login
 and restarts on failure.
@@ -103,6 +104,29 @@ and restarts on failure.
    engines: **gcin Cangjie (倉頡)**, **gcin Cangjie 5 (倉頡五代)**, **gcin Zhuyin (注音)**,
    **gcin Quick (速成)**, **gcin Array (行列)**, **gcin Simplex+Punct (標點簡易)**.
 4. Switch between input sources with **Super+Space**.
+
+### GNOME panel indicator (recommended for gcin Everywhere)
+
+On GNOME, `make install` also installs a small GNOME Shell extension that shows the
+**active method's glyph** in the top bar (倉/五/注/速/標/列, or 英 in English) so you can always
+tell which method gcin Everywhere is in. The indicator is shown **only** while the gcin
+Everywhere source is active. (Install is gated on detecting `gnome-shell`; on other
+desktops it's skipped — the IBus property drives their panels instead. Force it anywhere
+with `make install-extension FORCE_EXTENSION=1`.)
+
+`make install` also **enables** it for you (it adds the UUID to GNOME's
+`enabled-extensions`), so there's no separate `gnome-extensions enable` step. The one thing
+you must do on **Wayland** is **log out and back in** after the first install — GNOME Shell
+loads newly-installed extensions only at login (the shell can't be reloaded live on
+Wayland). After that the indicator updates instantly as you switch with `Ctrl+Alt+<digit>` /
+`Ctrl+Space`.
+
+**How it works:** the engine publishes the current method to a tiny state file
+(`$XDG_RUNTIME_DIR/gcin-everywhere/state`); the extension watches it with a file monitor
+(inotify — no polling) and mirrors the glyph in the panel. This is needed because GNOME
+Shell ignores IBus property symbol updates (see the Usage note above). On desktops with no
+extension the file is simply ignored — the IBus property still drives KDE / the standalone
+IBus panel.
 
 ---
 
@@ -139,7 +163,13 @@ With the **gcin Everywhere** source active, switch input method in place with
 | `Ctrl+Alt+8` | 行列 Array |
 | `Ctrl+Space` | Toggle Chinese ↔ English (resumes the last method) |
 
-The GNOME panel symbol shows the active method (倉/五/注/速/標/列), or 英 in English mode.
+**Seeing the active method (GNOME panel indicator).** Because gcin-everywhere is a
+*single* engine, GNOME Shell's built-in input indicator only shows its fixed component
+symbol (全) and can't tell you which method is active — GNOME ignores the live
+`IBusProperty` symbol updates the engine sends (those *do* work on KDE / the standalone
+IBus panel, showing 倉/五/注/速/標/列 or 英). To get a live indicator on GNOME, install the
+bundled GNOME Shell extension (see below); it shows the active method's glyph in the top
+bar and appears **only** while gcin Everywhere is the active source.
 
 > **Important — free up `Ctrl+Space`:** GNOME/mutter intercepts keyboard shortcuts before
 > the IBus engine, so the `Ctrl+Space` English toggle only works if no desktop shortcut
@@ -177,6 +207,11 @@ ibus-engine/        IBus wrapper
   gcin_engine.c     IBus GObject engine
   component/        IBus component XML
   Makefile          build + install
+gnome-extension/    GNOME Shell extension (top-bar method indicator)
+  gcin-everywhere@gcin.dev/
+    extension.js    watches the engine's state file, mirrors the glyph
+    metadata.json   shell-version + uuid
+    stylesheet.css  panel label styling
 ```
 
 ---
@@ -188,5 +223,6 @@ ibus-engine/        IBus wrapper
 - **More methods:** Dayi (大易), Buxiemi (嘸蝦米) — pending source tables
 - **Packaging:** `.deb` / `.rpm` package for easier installation
 
-Done: Cangjie, CJ5, Zhuyin, Quick, Array, Simplex+Punctuation, and the unified
-gcin-everywhere switcher (`Ctrl+Alt+<digit>` + `Ctrl+Space` English toggle).
+Done: Cangjie, CJ5, Zhuyin, Quick, Array, Simplex+Punctuation, the unified
+gcin-everywhere switcher (`Ctrl+Alt+<digit>` + `Ctrl+Space` English toggle), and a GNOME
+Shell extension showing the active method in the top panel.

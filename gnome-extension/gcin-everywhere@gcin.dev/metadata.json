@@ -1,0 +1,8 @@
+{
+  "uuid": "gcin-everywhere@gcin.dev",
+  "name": "gcin Everywhere Indicator",
+  "description": "Shows the active gcin-everywhere input method (倉/注/速/列/五/標/英) in the top panel. The indicator appears only while the gcin Everywhere input source is active, and updates live as you switch methods with Ctrl+Alt+<digit> or toggle English with Ctrl+Space. Reads state published by the ibus-engine-gcin engine.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "version": 1,
+  "url": "https://github.com/ThinkerYzu/gcin-everywhere"
+}

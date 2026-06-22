@@ -7,3 +7,6 @@ gcin-core/*.o
 gcin-core/libgcin-core.a
 gcin-core/test_feedkey
 ibus-engine/ibus-engine-gcin
+
+# generated HTML (convert_kb.sh)
+*.html

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <ibus.h>
+#include <glib/gstdio.h>
 #include "../gcin-core/gcin-core.h"
 
 /* X11 modifier bitmasks — passed to gcin_core_feed_phrase() which forwards
@@ -36,6 +37,18 @@ static const char *mode_symbol(int mode) {
         case 4:  return "五";   /* CJ5 */
         case 5:  return "標";   /* SimplexPunc */
         default: return "倉";   /* Cangjie */
+    }
+}
+
+/* Readable label for each mode — shown by the GNOME panel indicator. */
+static const char *mode_label(int mode) {
+    switch (mode) {
+        case 1:  return "注音 Zhuyin";
+        case 2:  return "速成 Quick";
+        case 3:  return "行列 Array";
+        case 4:  return "倉頡五代 CJ5";
+        case 5:  return "標點簡易 SimplexPunc";
+        default: return "倉頡 Cangjie";
     }
 }
 
@@ -112,6 +125,32 @@ static void ensure_property(GcinEngine *e) {
     ibus_property_set_symbol(e->prop, ibus_text_new_from_string(mode_symbol(e->mode)));
 }
 
+/* Publish the current method to a state file the GNOME Shell extension watches.
+   GNOME ignores IBus property symbol updates, so the panel never reflects the
+   live method; the bundled extension reads this file instead and mirrors it in
+   the top bar. Path: $XDG_RUNTIME_DIR/gcin-everywhere/state. Contents while the
+   engine is active: "<glyph>\t<label>"; empty when disabled, so the extension
+   hides its indicator (it only shows for the unified switcher). Harmless on
+   desktops with no extension — the IBus property above still drives their panels. */
+static void write_state(GcinEngine *e, gboolean active) {
+    if (!e->allow_switch) return;
+    char *dir  = g_build_filename(g_get_user_runtime_dir(), "gcin-everywhere", NULL);
+    g_mkdir_with_parents(dir, 0700);
+    char *path = g_build_filename(dir, "state", NULL);
+    char *content;
+    if (active) {
+        const char *sym = e->chinese_mode ? mode_symbol(e->mode) : "英";
+        const char *lbl = e->chinese_mode ? mode_label(e->mode)  : "英文 English";
+        content = g_strdup_printf("%s\t%s", sym, lbl);
+    } else {
+        content = g_strdup("");
+    }
+    g_file_set_contents(path, content, -1, NULL);
+    g_free(content);
+    g_free(path);
+    g_free(dir);
+}
+
 /* Push the current state to the panel: the active method's glyph in Chinese
    mode, or 英 when toggled to English passthrough (Ctrl+Space). */
 static void update_property(GcinEngine *e) {
@@ -120,6 +159,7 @@ static void update_property(GcinEngine *e) {
     ibus_property_set_symbol(e->prop, ibus_text_new_from_string(sym));
     ibus_property_set_label(e->prop, ibus_text_new_from_string(sym));
     ibus_engine_update_property((IBusEngine *)e, e->prop);
+    write_state(e, TRUE);  /* mirror to the GNOME extension's state file */
 }
 
 /* ── Key event ───────────────────────────────────────────────────── */
@@ -233,7 +273,11 @@ static void gcin_engine_enable(IBusEngine *e) {
     else                                                       ge->mode = 0;
     gcin_core_reset();
 }
-static void gcin_engine_disable(IBusEngine *e)   { (void)e; }
+static void gcin_engine_disable(IBusEngine *e) {
+    GcinEngine *ge = (GcinEngine *)e;
+    /* Switching away from the unified engine — clear the indicator state. */
+    if (ge->allow_switch) write_state(ge, FALSE);
+}
 
 /* IBus clears panel properties on focus change; re-register ours on focus-in. */
 static void gcin_engine_focus_in(IBusEngine *e) {
