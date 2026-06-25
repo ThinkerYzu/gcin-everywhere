@@ -1,0 +1,14 @@
+[Unit]
+Description=gcin-everywhere voice ASR daemon (Breeze-ASR-26)
+After=graphical-session.target
+
+[Service]
+# %h = the user's home dir (systemd unit specifier); keeps the unit portable.
+# The model is NOT loaded at startup — gcin-voiced defers it to the first
+# ping/start, so an idle session only pays the cost of an open socket.
+ExecStart=%h/.local/lib/gcin-voiced/venv/bin/python %h/.local/lib/gcin-voiced/gcin-voiced.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

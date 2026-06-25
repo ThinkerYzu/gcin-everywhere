@@ -1,0 +1,16 @@
+# gcin-voiced (Phase A) runtime dependencies.
+# Install into a venv:
+#   python3 -m venv venv && . venv/bin/activate && pip install -r requirements.txt
+#
+# Same stack as the validated POC (research/poc/requirements.txt), minus the
+# dataset-download extras the daemon never needs.
+transformers>=4.40
+torch                # CPU build works; install the CUDA build for usable latency
+numpy                # audio buffer concatenation
+sounddevice          # mic capture via PortAudio (sudo apt install libportaudio2)
+librosa              # resample / audio utilities (pulled in by the ASR path)
+soundfile            # libsndfile backend for librosa
+accelerate           # stabilizes / speeds up model loading
+#
+# --mock mode needs NONE of the above; it exists to develop the IBus engine
+# side without a GPU or microphone.

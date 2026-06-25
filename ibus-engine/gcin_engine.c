@@ -1,7 +1,20 @@
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <ibus.h>
 #include <glib/gstdio.h>
 #include "../gcin-core/gcin-core.h"
+
+/* Voice input (台語語音): mode value past the table/phonetic methods (0..5).
+   The recognizer lives in the out-of-process gcin-voiced daemon; this engine is
+   a thin socket client. See research/VOICE-INPUT-DESIGN.md. */
+#define MODE_VOICE 6
+
+/* Voice sub-state, mirrors the daemon's state machine plus a PENDING state for a
+   returned transcript sitting in the preedit awaiting commit. */
+enum { VOICE_IDLE = 0, VOICE_RECORDING, VOICE_THINKING, VOICE_PENDING };
 
 /* X11 modifier bitmasks — passed to gcin_core_feed_phrase() which forwards
    them to feed_phrase() inside libgcin-core (expects X11 values, not IBus). */
@@ -15,11 +28,20 @@ typedef struct _GcinEngineClass GcinEngineClass;
 struct _GcinEngine {
     IBusEngine       parent;
     IBusLookupTable *table;
-    int              mode;         /* 0=Cangjie, 1=Zhuyin, 2=Quick, 3=Array, 4=CJ5, 5=SimplexPunc */
+    int              mode;         /* 0=Cangjie, 1=Zhuyin, 2=Quick, 3=Array, 4=CJ5, 5=SimplexPunc, 6=Voice */
     gboolean         chinese_mode;
     gboolean         allow_switch; /* TRUE only for the unified gcin-everywhere engine */
     IBusProperty    *prop;         /* panel property showing the active method (everywhere only) */
     IBusPropList    *props;        /* prop list registered with IBus (everywhere only) */
+
+    /* Voice mode (gcin-voiced socket client). All async; never blocks the key loop. */
+    int          voiced_fd;        /* Unix socket to gcin-voiced, -1 if unconnected */
+    GIOChannel  *voiced_chan;      /* GLib wrapper around voiced_fd */
+    guint        voiced_watch;     /* g_io_add_watch source id (0 if none) */
+    int          voice_status;     /* VOICE_IDLE / RECORDING / THINKING / PENDING */
+    char         voice_text[1024]; /* transcript held in the preedit awaiting commit */
+    char         voiced_buf[4096]; /* accumulates partial event lines from the socket */
+    int          voiced_buflen;
 };
 struct _GcinEngineClass { IBusEngineClass parent; };
 
@@ -36,6 +58,7 @@ static const char *mode_symbol(int mode) {
         case 3:  return "列";   /* Array */
         case 4:  return "五";   /* CJ5 */
         case 5:  return "標";   /* SimplexPunc */
+        case 6:  return "語";   /* Voice */
         default: return "倉";   /* Cangjie */
     }
 }
@@ -48,6 +71,7 @@ static const char *mode_label(int mode) {
         case 3:  return "行列 Array";
         case 4:  return "倉頡五代 CJ5";
         case 5:  return "標點簡易 SimplexPunc";
+        case 6:  return "台語語音 Voice";
         default: return "倉頡 Cangjie";
     }
 }
@@ -63,8 +87,28 @@ static int digit_to_mode(guint keyval) {
         case '4': return 2;   /* 速成 Quick */
         case '5': return 5;   /* 標點簡易 SimplexPunc */
         case '8': return 3;   /* 行列 Array */
+        case '0': return MODE_VOICE;  /* 台語語音 Voice (Breeze-ASR-26) */
         default:  return -1;
     }
+}
+
+/* Panel glyph for the live state: 英 in English; in voice mode the dynamic
+   recording/thinking glyph; otherwise the method symbol. */
+static const char *active_symbol(GcinEngine *e) {
+    if (!e->chinese_mode) return "英";
+    if (e->mode == MODE_VOICE) {
+        switch (e->voice_status) {
+            case VOICE_RECORDING: return "🎤";
+            case VOICE_THINKING:  return "…";
+            default:              return "語";
+        }
+    }
+    return mode_symbol(e->mode);
+}
+
+static const char *active_label(GcinEngine *e) {
+    if (!e->chinese_mode) return "英文 English";
+    return mode_label(e->mode);
 }
 
 /* ── Commit callback ─────────────────────────────────────────────── */
@@ -139,9 +183,7 @@ static void write_state(GcinEngine *e, gboolean active) {
     char *path = g_build_filename(dir, "state", NULL);
     char *content;
     if (active) {
-        const char *sym = e->chinese_mode ? mode_symbol(e->mode) : "英";
-        const char *lbl = e->chinese_mode ? mode_label(e->mode)  : "英文 English";
-        content = g_strdup_printf("%s\t%s", sym, lbl);
+        content = g_strdup_printf("%s\t%s", active_symbol(e), active_label(e));
     } else {
         content = g_strdup("");
     }
@@ -155,11 +197,200 @@ static void write_state(GcinEngine *e, gboolean active) {
    mode, or 英 when toggled to English passthrough (Ctrl+Space). */
 static void update_property(GcinEngine *e) {
     if (!e->allow_switch || !e->prop) return;
-    const char *sym = e->chinese_mode ? mode_symbol(e->mode) : "英";
+    const char *sym = active_symbol(e);
     ibus_property_set_symbol(e->prop, ibus_text_new_from_string(sym));
     ibus_property_set_label(e->prop, ibus_text_new_from_string(sym));
     ibus_engine_update_property((IBusEngine *)e, e->prop);
     write_state(e, TRUE);  /* mirror to the GNOME extension's state file */
+}
+
+/* ── Voice mode: gcin-voiced socket client ───────────────────────────
+   The recognizer runs out-of-process (gcin-voiced). The engine sends tiny
+   control commands and receives transcript events asynchronously via a GLib
+   GSource on the socket fd, so process_key_event NEVER blocks on inference. */
+
+/* Extract a JSON string value for "key" from a flat one-line object. Handles the
+   escapes the daemon can emit (\" \\ \/ \n \t \r). The daemon dumps with
+   ensure_ascii=False, so UTF-8 bytes appear literally (no \uXXXX to decode). */
+static int json_get_str(const char *line, const char *key, char *out, int outlen) {
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = strstr(line, pat);
+    if (!p) return 0;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t' || *p == ':') p++;
+    if (*p != '"') return 0;
+    p++;
+    int i = 0;
+    while (*p && *p != '"' && i < outlen - 1) {
+        if (*p == '\\') {
+            p++;
+            switch (*p) {
+                case 'n': out[i++] = '\n'; break;
+                case 't': out[i++] = '\t'; break;
+                case 'r': out[i++] = '\r'; break;
+                case '"': out[i++] = '"';  break;
+                case '\\': out[i++] = '\\'; break;
+                case '/': out[i++] = '/';  break;
+                default:  if (*p) out[i++] = *p; break;
+            }
+            if (*p) p++;
+        } else {
+            out[i++] = *p++;
+        }
+    }
+    out[i] = '\0';
+    return 1;
+}
+
+/* Show the pending transcript in the preedit (underlined), or hide if empty. */
+static void voice_update_preedit(GcinEngine *e) {
+    IBusEngine *ie = (IBusEngine *)e;
+    if (e->voice_text[0]) {
+        IBusText *pre = ibus_text_new_from_string(e->voice_text);
+        ibus_text_append_attribute(pre, IBUS_ATTR_TYPE_UNDERLINE,
+                                   IBUS_ATTR_UNDERLINE_SINGLE, 0, -1);
+        ibus_engine_update_preedit_text(ie, pre,
+                                        g_utf8_strlen(e->voice_text, -1), TRUE);
+    } else {
+        ibus_engine_hide_preedit_text(ie);
+    }
+}
+
+/* Apply one daemon event line to the engine's voice state + panel. */
+static void voiced_handle_line(GcinEngine *e, const char *line) {
+    char ev[32];
+    if (!json_get_str(line, "event", ev, sizeof(ev))) return;
+    if (!strcmp(ev, "recording")) {
+        e->voice_status = VOICE_RECORDING;
+    } else if (!strcmp(ev, "thinking")) {
+        e->voice_status = VOICE_THINKING;
+    } else if (!strcmp(ev, "transcript")) {
+        char text[1024] = "";
+        json_get_str(line, "text", text, sizeof(text));
+        if (text[0]) {
+            g_strlcpy(e->voice_text, text, sizeof(e->voice_text));
+            e->voice_status = VOICE_PENDING;
+        } else {
+            e->voice_text[0] = '\0';      /* empty/too-short utterance */
+            e->voice_status = VOICE_IDLE;
+        }
+        voice_update_preedit(e);
+    } else if (!strcmp(ev, "error")) {
+        e->voice_text[0] = '\0';
+        e->voice_status = VOICE_IDLE;
+        voice_update_preedit(e);
+    } /* "ready" needs no UI change */
+    update_property(e);
+}
+
+static void voiced_disconnect(GcinEngine *e) {
+    if (e->voiced_watch) { g_source_remove(e->voiced_watch); e->voiced_watch = 0; }
+    if (e->voiced_chan) {
+        g_io_channel_shutdown(e->voiced_chan, FALSE, NULL);
+        g_io_channel_unref(e->voiced_chan);
+        e->voiced_chan = NULL;
+    }
+    if (e->voiced_fd >= 0) { close(e->voiced_fd); e->voiced_fd = -1; }
+    e->voiced_buflen = 0;
+}
+
+/* GSource callback: drain the socket, split into lines, dispatch each event. */
+static gboolean voiced_event_cb(GIOChannel *src, GIOCondition cond, gpointer data) {
+    (void)src;
+    GcinEngine *e = (GcinEngine *)data;
+    if (cond & (G_IO_HUP | G_IO_ERR)) { voiced_disconnect(e); return FALSE; }
+    char tmp[2048];
+    ssize_t n = read(e->voiced_fd, tmp, sizeof(tmp));
+    if (n <= 0) { voiced_disconnect(e); return FALSE; }
+    for (ssize_t i = 0; i < n; i++) {
+        if (tmp[i] == '\n') {
+            e->voiced_buf[e->voiced_buflen] = '\0';
+            voiced_handle_line(e, e->voiced_buf);
+            e->voiced_buflen = 0;
+        } else if (e->voiced_buflen < (int)sizeof(e->voiced_buf) - 1) {
+            e->voiced_buf[e->voiced_buflen++] = tmp[i];
+        } else {
+            e->voiced_buflen = 0;         /* overlong line: drop, resync on \n */
+        }
+    }
+    return TRUE;
+}
+
+/* Connect to $XDG_RUNTIME_DIR/gcin-everywhere/voiced.sock and watch it. */
+static int voiced_connect(GcinEngine *e) {
+    if (e->voiced_fd >= 0) return 0;
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    int len = snprintf(addr.sun_path, sizeof(addr.sun_path),
+                       "%s/gcin-everywhere/voiced.sock", g_get_user_runtime_dir());
+    if (len < 0 || len >= (int)sizeof(addr.sun_path)) return -1;  /* path too long */
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return -1;                        /* daemon not running */
+    }
+    e->voiced_fd   = fd;
+    e->voiced_chan = g_io_channel_unix_new(fd);
+    g_io_channel_set_encoding(e->voiced_chan, NULL, NULL);  /* binary */
+    e->voiced_watch = g_io_add_watch(e->voiced_chan,
+                                     G_IO_IN | G_IO_HUP | G_IO_ERR,
+                                     voiced_event_cb, e);
+    e->voiced_buflen = 0;
+    return 0;
+}
+
+/* Fire-and-forget a one-line command, connecting lazily. */
+static void voiced_send(GcinEngine *e, const char *cmd) {
+    if (e->voiced_fd < 0 && voiced_connect(e) < 0) return;
+    if (write(e->voiced_fd, cmd, strlen(cmd)) < 0) voiced_disconnect(e);
+}
+
+/* Voice-mode key handling. Returns TRUE if the key was consumed. PTT key is
+   Space (reaches the engine reliably — unlike a global chord the desktop could
+   grab); Enter commits the pending transcript, Esc/Backspace discards. */
+static gboolean handle_voice_key(GcinEngine *e, guint keyval) {
+    switch (e->voice_status) {
+        case VOICE_RECORDING:
+            if (keyval == IBUS_space) { voiced_send(e, "{\"cmd\":\"stop\"}\n"); return TRUE; }
+            if (keyval == IBUS_Escape) {
+                voiced_send(e, "{\"cmd\":\"cancel\"}\n");
+                e->voice_status = VOICE_IDLE;
+                update_property(e);
+                return TRUE;
+            }
+            return TRUE;                  /* swallow keys while the mic is live */
+        case VOICE_THINKING:
+            return TRUE;                  /* swallow keys while transcribing */
+        case VOICE_PENDING:
+            if (keyval == IBUS_Return || keyval == IBUS_KP_Enter) {
+                on_commit(e->voice_text, (IBusEngine *)e);
+                e->voice_text[0] = '\0';
+                e->voice_status = VOICE_IDLE;
+                voice_update_preedit(e);
+                update_property(e);
+                return TRUE;
+            }
+            if (keyval == IBUS_Escape || keyval == IBUS_BackSpace) {
+                e->voice_text[0] = '\0';
+                e->voice_status = VOICE_IDLE;
+                voice_update_preedit(e);
+                update_property(e);
+                return TRUE;
+            }
+            if (keyval == IBUS_space) {   /* re-record: discard + start over */
+                e->voice_text[0] = '\0';
+                voice_update_preedit(e);
+                voiced_send(e, "{\"cmd\":\"start\"}\n");
+                return TRUE;
+            }
+            return TRUE;                  /* protect the pending preedit */
+        default:                          /* VOICE_IDLE */
+            if (keyval == IBUS_space) { voiced_send(e, "{\"cmd\":\"start\"}\n"); return TRUE; }
+            return FALSE;                 /* idle: let other keys reach the app */
+    }
 }
 
 /* ── Key event ───────────────────────────────────────────────────── */
@@ -199,11 +430,25 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
         int new_mode = digit_to_mode(keyval);
         if (new_mode < 0) return FALSE;
         if (new_mode != e->mode || !e->chinese_mode) {
+            /* Leaving voice mode: abort any live recording and drop the preedit. */
+            if (e->mode == MODE_VOICE && new_mode != MODE_VOICE) {
+                if (e->voice_status == VOICE_RECORDING)
+                    voiced_send(e, "{\"cmd\":\"cancel\"}\n");
+                e->voice_text[0] = '\0';
+                e->voice_status = VOICE_IDLE;
+            }
             gcin_core_reset();            /* discard any pending composition */
             ibus_engine_hide_preedit_text(iengine);
             ibus_engine_hide_lookup_table(iengine);
             e->mode = new_mode;
             e->chinese_mode = TRUE;
+            /* Entering voice mode: connect the daemon and warm the model. */
+            if (new_mode == MODE_VOICE) {
+                e->voice_status = VOICE_IDLE;
+                e->voice_text[0] = '\0';
+                voiced_connect(e);
+                voiced_send(e, "{\"cmd\":\"ping\"}\n");
+            }
             update_property(e);
         }
         return TRUE;
@@ -211,6 +456,12 @@ static gboolean gcin_engine_process_key_event(IBusEngine *iengine,
 
     /* English passthrough: let every key reach the application untouched. */
     if (!e->chinese_mode) return FALSE;
+
+    /* Voice mode: keys drive the gcin-voiced socket client (PTT / commit /
+       discard), never the table/phonetic core. Transcripts arrive async on the
+       socket GSource. Handled before full-width/phrase intercepts. */
+    if (e->mode == MODE_VOICE)
+        return handle_voice_key(e, keyval);
 
     /* Shift+Space: toggle full-width character mode, same as gcin's Shift+Space
        binding (toggle_half_full_char in eve.cpp). Clear any pending composition. */
@@ -277,6 +528,10 @@ static void gcin_engine_disable(IBusEngine *e) {
     GcinEngine *ge = (GcinEngine *)e;
     /* Switching away from the unified engine — clear the indicator state. */
     if (ge->allow_switch) write_state(ge, FALSE);
+    /* Drop the voice socket; the daemon cancels any recording on disconnect. */
+    voiced_disconnect(ge);
+    ge->voice_status = VOICE_IDLE;
+    ge->voice_text[0] = '\0';
 }
 
 /* IBus clears panel properties on focus change; re-register ours on focus-in.
@@ -289,6 +544,13 @@ static void gcin_engine_disable(IBusEngine *e) {
 static void gcin_engine_focus_in(IBusEngine *e) {
     GcinEngine *ge = (GcinEngine *)e;
     if (ge->allow_switch) {
+        /* Reset to English: abort a live recording and drop any pending transcript. */
+        if (ge->mode == MODE_VOICE) {
+            if (ge->voice_status == VOICE_RECORDING)
+                voiced_send(ge, "{\"cmd\":\"cancel\"}\n");
+            ge->voice_status = VOICE_IDLE;
+            ge->voice_text[0] = '\0';
+        }
         ge->chinese_mode = FALSE;
         gcin_core_reset();
         ibus_engine_hide_preedit_text(e);
@@ -329,6 +591,12 @@ static void gcin_engine_init(GcinEngine *e) {
     e->allow_switch = FALSE;
     e->prop         = NULL;
     e->props        = NULL;
+    e->voiced_fd    = -1;
+    e->voiced_chan  = NULL;
+    e->voiced_watch = 0;
+    e->voice_status = VOICE_IDLE;
+    e->voice_text[0] = '\0';
+    e->voiced_buflen = 0;
     g_object_ref_sink(e->table);
 }
 
