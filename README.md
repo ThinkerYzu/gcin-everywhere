@@ -231,6 +231,11 @@ systemctl --user daemon-reload
 systemctl --user enable --now gcin-voiced.service
 ```
 
+If you already have a venv with these deps (e.g. the POC venv), skip the download by
+symlinking it instead of creating a new one — the stock service then works unchanged:
+`ln -sfn /path/to/existing/.venv ~/.local/lib/gcin-voiced/venv` (trade-off: the service
+breaks if that venv is moved or deleted).
+
 To try it without installing a service, just run it in a terminal:
 `~/.local/lib/gcin-voiced/venv/bin/python voiced/gcin-voiced.py --device cuda`
 (add `libportaudio2` for the mic: `sudo apt install libportaudio2`). If the daemon isn't
