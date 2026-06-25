@@ -12,7 +12,9 @@ to Wayland, gcin stopped working. This project fills that gap.
 Cangjie (倉頡), CJ5 (倉頡五代), Zhuyin (注音/Bopomofo), Quick (速成), Array (行列),
 Simplex+Punctuation (標點簡易), and **gcin-everywhere**, a single engine that switches
 between them in place via `Ctrl+Alt+<digit>` and toggles English with `Ctrl+Space` —
-just like classic gcin.
+just like classic gcin. Also includes an experimental **voice input** method (台語語音,
+`Ctrl+Alt+0`) — speak Taigi/Mandarin, get Mandarin Han characters via a local
+[Breeze-ASR-26](https://huggingface.co/MediaTek-Research/Breeze-ASR-26) daemon.
 
 ---
 
@@ -161,6 +163,7 @@ With the **gcin Everywhere** source active, switch input method in place with
 | `Ctrl+Alt+4` | 速成 Quick |
 | `Ctrl+Alt+5` | 標點簡易 SimplexPunc |
 | `Ctrl+Alt+8` | 行列 Array |
+| `Ctrl+Alt+0` | 台語語音 Voice (speech-to-text; see below) |
 | `Ctrl+Space` | Toggle Chinese ↔ English (resumes the last method) |
 
 **Starts in English on every focus.** When gcin Everywhere is active, each newly-focused text
@@ -191,6 +194,50 @@ bar and appears **only** while gcin Everywhere is the active source.
 > out and back in. (A symmetric "two presses to switch" is the sign `Ctrl+Space` is still
 > double-bound.)
 
+### Voice input (台語語音) — speak instead of type
+
+**Experimental.** With **gcin Everywhere** active, press **`Ctrl+Alt+0`** to enter voice
+mode (panel shows **語**). Speak Taiwanese (Taigi), Mandarin, or code-switched speech and
+it commits the recognized **Mandarin Han characters**, just like the other methods. Audio
+is transcribed **fully locally** by [Breeze-ASR-26](https://huggingface.co/MediaTek-Research/Breeze-ASR-26)
+(a Whisper-large-v2 fine-tune) — nothing leaves your machine.
+
+| Key (in voice mode) | Action |
+|---------------------|--------|
+| `Space` | Push-to-talk: start recording (panel **🎤**); press again to stop (panel **…** while transcribing) |
+| `Enter` | Commit the transcript shown underlined in the preedit |
+| `Esc` / `Backspace` | Discard the transcript (or cancel recording) |
+| `Space` (with a pending transcript) | Re-record, replacing it |
+
+The transcript lands in the **preedit for review**, never auto-committed — accuracy is
+draft quality (~30% CER), so check it before `Enter`. Recognition runs in the background,
+so your keyboard is never blocked while recording or transcribing.
+
+**Requires the `gcin-voiced` daemon.** The IBus engine is only a thin client; the speech
+model runs in a separate daemon ([`voiced/`](voiced/README.md)). `make install` does **not**
+set it up — install it once:
+
+```bash
+# 1. Daemon + a Python venv with the ML deps (GPU strongly recommended).
+mkdir -p ~/.local/lib/gcin-voiced
+cp voiced/gcin-voiced.py ~/.local/lib/gcin-voiced/
+python3 -m venv ~/.local/lib/gcin-voiced/venv
+~/.local/lib/gcin-voiced/venv/bin/pip install -r voiced/requirements.txt
+
+# 2. Autostart at login (lazy-loads the model on first use, ~3 GB download first run).
+mkdir -p ~/.config/systemd/user
+cp voiced/gcin-voiced.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now gcin-voiced.service
+```
+
+To try it without installing a service, just run it in a terminal:
+`~/.local/lib/gcin-voiced/venv/bin/python voiced/gcin-voiced.py --device cuda`
+(add `libportaudio2` for the mic: `sudo apt install libportaudio2`). If the daemon isn't
+running, `Ctrl+Alt+0` + `Space` simply does nothing — the engine connects to the daemon's
+socket and there's nothing to connect to. See [`voiced/README.md`](voiced/README.md) for the
+socket protocol, the `--mock` test backend, and device selection.
+
 ---
 
 ## Rebuilding after changes
@@ -214,6 +261,10 @@ ibus-engine/        IBus wrapper
   gcin_engine.c     IBus GObject engine
   component/        IBus component XML
   Makefile          build + install
+voiced/             gcin-voiced — local speech-to-text daemon (台語語音)
+  gcin-voiced.py    ASR daemon (Breeze-ASR-26 over a Unix socket)
+  test-protocol.py  protocol smoke test against the --mock backend
+  gcin-voiced.service / requirements.txt / README.md
 gnome-extension/    GNOME Shell extension (top-bar method indicator)
   gcin-everywhere@gcin.dev/
     extension.js    watches the engine's state file, mirrors the glyph
@@ -228,8 +279,11 @@ gnome-extension/    GNOME Shell extension (top-bar method indicator)
 - **Windows** via Text Services Framework (TSF)
 - **macOS** via Input Method Kit (IMKit)
 - **More methods:** Dayi (大易), Buxiemi (嘸蝦米) — pending source tables
-- **Packaging:** `.deb` / `.rpm` package for easier installation
+- **Voice input:** native whisper.cpp/GGML daemon (CPU-capable, no Python), N-best
+  correction candidates, optional hold-to-talk and romanized-Taigi output
+- **Packaging:** `.deb` / `.rpm` package for easier installation (incl. the voice daemon)
 
 Done: Cangjie, CJ5, Zhuyin, Quick, Array, Simplex+Punctuation, the unified
-gcin-everywhere switcher (`Ctrl+Alt+<digit>` + `Ctrl+Space` English toggle), and a GNOME
-Shell extension showing the active method in the top panel.
+gcin-everywhere switcher (`Ctrl+Alt+<digit>` + `Ctrl+Space` English toggle), a GNOME
+Shell extension showing the active method in the top panel, and experimental voice input
+(`Ctrl+Alt+0`, local Breeze-ASR-26 daemon).
