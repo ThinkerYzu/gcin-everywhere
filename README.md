@@ -214,34 +214,28 @@ draft quality (~30% CER), so check it before `Enter`. Recognition runs in the ba
 so your keyboard is never blocked while recording or transcribing.
 
 **Requires the `gcin-voiced` daemon.** The IBus engine is only a thin client; the speech
-model runs in a separate daemon ([`voiced/`](voiced/README.md)). `make install` does **not**
-set it up — install it once:
+model runs in a separate daemon ([`voiced/`](voiced/README.md)). It is **not** part of
+`make install` (it pulls in a large ML stack, ~3 GB) — install it once with its own target:
 
 ```bash
-# 1. Daemon + a Python venv with the ML deps (GPU strongly recommended).
-mkdir -p ~/.local/lib/gcin-voiced
-cp voiced/gcin-voiced.py ~/.local/lib/gcin-voiced/
-python3 -m venv ~/.local/lib/gcin-voiced/venv
-~/.local/lib/gcin-voiced/venv/bin/pip install -r voiced/requirements.txt
-
-# 2. Autostart at login (lazy-loads the model on first use, ~3 GB download first run).
-mkdir -p ~/.config/systemd/user
-cp voiced/gcin-voiced.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now gcin-voiced.service
+make install-voiced                                # create a fresh venv (downloads the deps)
+make install-voiced VOICED_VENV=/path/to/.venv     # or reuse an existing venv (symlink, no download)
 ```
 
-If you already have a venv with these deps (e.g. the POC venv), skip the download by
-symlinking it instead of creating a new one — the stock service then works unchanged:
-`ln -sfn /path/to/existing/.venv ~/.local/lib/gcin-voiced/venv` (trade-off: the service
-breaks if that venv is moved or deleted).
+This installs the daemon to `~/.local/lib/gcin-voiced/`, sets up the venv, and enables a
+systemd `--user` service that **autostarts at login** and lazy-loads the model on first use
+(~7 MB idle until then). A GPU is strongly recommended. For the microphone you also need
+PortAudio: `sudo apt install libportaudio2`.
 
-To try it without installing a service, just run it in a terminal:
-`~/.local/lib/gcin-voiced/venv/bin/python voiced/gcin-voiced.py --device cuda`
-(add `libportaudio2` for the mic: `sudo apt install libportaudio2`). If the daemon isn't
-running, `Ctrl+Alt+0` + `Space` simply does nothing — the engine connects to the daemon's
-socket and there's nothing to connect to. See [`voiced/README.md`](voiced/README.md) for the
-socket protocol, the `--mock` test backend, and device selection.
+> Reusing an existing venv (`VOICED_VENV=...`) symlinks it, so the service breaks if that
+> venv is later moved or deleted; a fresh venv is self-contained.
+
+To try the daemon without the service, run it in a terminal:
+`~/.local/lib/gcin-voiced/venv/bin/python voiced/gcin-voiced.py --device cuda`.
+**If the daemon isn't running, `Ctrl+Alt+0` + `Space` simply does nothing** — the engine
+connects to the daemon's socket and there's nothing to connect to. See
+[`voiced/README.md`](voiced/README.md) for the socket protocol, the `--mock` test backend,
+and device selection.
 
 ---
 
