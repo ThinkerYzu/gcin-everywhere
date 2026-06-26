@@ -10,3 +10,6 @@ ibus-engine/ibus-engine-gcin
 
 # generated HTML (convert_kb.sh)
 *.html
+
+# Python bytecode cache
+__pycache__/

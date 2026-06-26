@@ -18,7 +18,7 @@ Boundary contract (the only thing the engine depends on):
     {"cmd":"start"}                         begin mic capture
     {"cmd":"stop"}                          end capture, transcribe, return text
     {"cmd":"cancel"}                        drop capture, no transcription
-    {"cmd":"config","language":"chinese","task":"transcribe"}
+    {"cmd":"config","language":"chinese","task":"transcribe","punctuate":true}
 
   daemon -> engine (events)
     {"event":"ready","model":"...","device":"cuda:0"}
@@ -37,29 +37,58 @@ Design intent (see design doc):
     thread, so `cancel` stays responsive while a previous turn is still decoding.
   - The backend is swappable behind this socket. Phase A = HF Transformers (here);
     Phase B = whisper.cpp/GGML, with zero engine changes.
+  - Punctuation restoration: Breeze-ASR-26 emits Han text with no punctuation, so the raw
+    transcript is post-processed through a local LLM (Ollama, default qwen3:14b) that inserts
+    ，。！？ etc. WITHOUT changing the wording. Transparent to the engine — the `transcript`
+    event just carries punctuated text. Any failure falls back to the raw transcript; a
+    word-skeleton check rejects output that changed/translated the wording.
 
 Run:
     gcin-voiced.py                 # real backend (Breeze-ASR-26 via Transformers)
     gcin-voiced.py --device cuda   # force GPU
+    gcin-voiced.py --no-punctuate  # skip the LLM punctuation pass
     gcin-voiced.py --mock          # no model/mic; canned transcript (engine tests)
     gcin-voiced.py --list-devices  # show input devices and exit
 
 Requires (real mode): transformers, torch, sounddevice + libportaudio2, numpy.
+Punctuation needs a running Ollama with the chosen model (`ollama pull qwen3:14b`); it uses
+only stdlib HTTP, no extra Python deps, and degrades gracefully (raw text) if absent.
 Mock mode needs none of these — it exists to develop/test the engine side.
 """
 
 import argparse
 import json
 import os
+import re
 import socket
 import sys
 import threading
 import time
+import urllib.request
 
 MODEL_ID = "MediaTek-Research/Breeze-ASR-26"
 TARGET_SR = 16000          # Whisper works at 16 kHz mono
 MIN_AUDIO_S = 0.2          # ignore sub-200ms blips (matches the POC)
 MOCK_TRANSCRIPT = "語音輸入測試 你好世界"   # canned text for --mock
+
+# Punctuation restoration (Breeze-ASR-26 emits Han text with no punctuation; a small
+# local LLM adds ，。！？ without changing the wording. See Punctuator below).
+PUNCT_MODEL = "qwen3:14b"                           # Ollama model tag (co-fits the GPU)
+PUNCT_URL = "http://localhost:11434/api/chat"      # Ollama chat endpoint
+PUNCT_TIMEOUT = 90                                 # seconds (covers a cold GPU model load)
+# keep_alive controls how long Ollama keeps the model resident in VRAM. qwen3:14b (~9.8 GB)
+# co-fits with Breeze-ASR-26 (~6.6 GB) on a 24 GB GPU (verified: Breeze's .generate() runs with
+# ~7.6 GB free), so we keep it resident ("5m") to skip the reload (≈2-3 s/utterance). IMPORTANT:
+# a model that does NOT co-reside (e.g. the 13-16 GB vision model qwen2.5vl) will starve
+# .generate() and wedge transcription — for those pass `--punctuate-keep-alive 0` so the model
+# unloads after each call and the GPU is free for the next transcription.
+PUNCT_KEEP_ALIVE = "5m"
+PUNCT_NUM_CTX = 1024                               # short utterances; keeps load + KV cheap
+PUNCT_SYSTEM = (
+    "你是一個標點符號修正助手。使用者會給你一段沒有標點符號的中文語音辨識結果。"
+    "請只加上適當的標點符號（，。！？、；：），不要更改、增加或刪除任何文字，"
+    "不要翻譯，不要解釋。直接輸出加上標點後的句子。"
+)
 
 
 def log(*a):
@@ -209,6 +238,93 @@ class MockBackend:
         return MOCK_TRANSCRIPT, [], 0.1
 
 
+# ── Punctuation restorer ───────────────────────────────────────────────────
+#
+# Breeze-ASR-26 returns Mandarin Han characters with no punctuation. We post-
+# process the raw transcript through a local LLM (Ollama, default qwen3:14b) that
+# inserts ，。！？ etc. WITHOUT changing the wording.
+#
+# This runs inside the transcribe worker thread, so the added latency hides behind
+# the engine's "…thinking" glyph and never blocks the key loop. Two safety nets:
+#   - Never lose a transcript: any failure (Ollama down, timeout) falls back to the
+#     raw, unpunctuated text.
+#   - Never corrupt words: accept the LLM output only if its non-punctuation
+#     characters (a "word skeleton") are identical to the input. If the model dropped,
+#     added, translated, or altered a character, discard its output and keep the raw text.
+
+# Characters ignored when checking "did the wording change": punctuation (ASCII +
+# fullwidth) and all whitespace. Everything else must match between input and output.
+_PUNCT_CHARS = re.compile(
+    r"[\s，。！？、；：「」『』（）《》〈〉【】．·…—－,.!?;:()\[\]{}<>\"'`~@#$%^&*_+=|\\/-]"
+)
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _word_skeleton(s):
+    """Strip punctuation + whitespace, leaving only meaningful characters."""
+    return _PUNCT_CHARS.sub("", s)
+
+
+class Punctuator:
+    def __init__(self, model=PUNCT_MODEL, url=PUNCT_URL, enabled=True,
+                 timeout=PUNCT_TIMEOUT, keep_alive=PUNCT_KEEP_ALIVE,
+                 num_ctx=PUNCT_NUM_CTX):
+        self.model = model
+        self.url = url
+        self.enabled = enabled
+        self.timeout = timeout
+        self.keep_alive = keep_alive
+        self.num_ctx = num_ctx
+
+    def _call(self, text):
+        """POST one chat request to Ollama; return the assistant content."""
+        payload = json.dumps({
+            "model": self.model,
+            "stream": False,
+            "think": False,        # qwen3 et al.: skip reasoning tokens (ignored by others)
+            "keep_alive": self.keep_alive,
+            "options": {"temperature": 0, "num_ctx": self.num_ctx},
+            "messages": [
+                {"role": "system", "content": PUNCT_SYSTEM},
+                {"role": "user", "content": text},
+            ],
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            self.url, data=payload,
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["message"]["content"].strip()
+
+    @staticmethod
+    def _clean(out):
+        """Strip reasoning blocks / wrapping quotes / code fences the model might add."""
+        out = _THINK_BLOCK.sub("", out).strip()
+        if out.startswith("```"):
+            out = out.strip("`").strip()
+        if len(out) >= 2 and out[0] in "\"'「『“" and out[-1] in "\"'」』”":
+            out = out[1:-1].strip()
+        return out.splitlines()[0].strip() if out else out
+
+    def add_punct(self, text):
+        """Return `text` with punctuation added, or the raw text on any problem."""
+        if not self.enabled or not text.strip():
+            return text
+        try:
+            t0 = time.time()
+            out = self._clean(self._call(text))
+        except Exception as e:           # noqa: BLE001 - never lose a transcript
+            log(f"punctuation failed ({e}); using raw transcript")
+            return text
+        if _word_skeleton(out) != _word_skeleton(text):
+            log("punctuator changed the wording; using raw transcript")
+            log(f"  raw : {text}")
+            log(f"  llm : {out}")
+            return text
+        log(f"punctuated in {time.time() - t0:.2f}s: {out}")
+        return out
+
+
 # ── Socket server ────────────────────────────────────────────────────────
 #
 # One connected engine client at a time (the engine connects on entering voice
@@ -221,8 +337,9 @@ class Server:
     STATE_RECORDING = "recording"
     STATE_THINKING = "thinking"
 
-    def __init__(self, backend, sock_path):
+    def __init__(self, backend, sock_path, punctuator=None):
         self.backend = backend
+        self.punctuator = punctuator or Punctuator(enabled=False)
         self.sock_path = sock_path
         self.state = self.STATE_IDLE
         self._lock = threading.Lock()     # guards state + socket writes
@@ -294,8 +411,11 @@ class Server:
     def _transcribe_worker(self, audio):
         try:
             text, alts, rtf = self.backend.transcribe(audio)
+            log(f"raw transcript (rtf={rtf}): {text!r}")
+            text = self.punctuator.add_punct(text)
             self._send(event="transcript", text=text, alts=alts, rtf=rtf)
         except Exception as e:            # noqa: BLE001
+            log(f"transcription error: {e}")
             self._send(event="error", msg=f"transcription failed: {e}")
         finally:
             with self._lock:
@@ -315,6 +435,8 @@ class Server:
             self.backend.language = lang
         if task:
             self.backend.task = task
+        if "punctuate" in msg:
+            self.punctuator.enabled = bool(msg["punctuate"])
 
     def _dispatch(self, msg):
         cmd = msg.get("cmd")
@@ -405,6 +527,20 @@ def parse_args():
                    help="no model/mic; return a canned transcript (engine tests)")
     p.add_argument("--list-devices", action="store_true",
                    help="list audio input devices and exit")
+    # Punctuation restoration (post-process ASR output through a local LLM).
+    pg = p.add_mutually_exclusive_group()
+    pg.add_argument("--punctuate", dest="punctuate", action="store_true",
+                    default=None, help="restore punctuation via a local LLM (default: on in real mode)")
+    pg.add_argument("--no-punctuate", dest="punctuate", action="store_false",
+                    help="disable punctuation restoration")
+    p.add_argument("--punctuate-model", default=PUNCT_MODEL,
+                   help=f"Ollama model for punctuation (default: {PUNCT_MODEL})")
+    p.add_argument("--punctuate-url", default=PUNCT_URL,
+                   help="Ollama chat endpoint URL")
+    p.add_argument("--punctuate-keep-alive", default=str(PUNCT_KEEP_ALIVE),
+                   help="Ollama keep_alive for the LLM (default: '5m' = keep resident, fast; "
+                        "qwen3:14b co-fits the ASR model. Pass '0' to unload after each call "
+                        "so it never starves the ASR GPU — needed for heavier models)")
     return p.parse_args()
 
 
@@ -421,7 +557,16 @@ def main():
     else:
         backend = AsrBackend(device=args.device, device_index=args.device_index,
                              language=args.language, task=args.task)
-    Server(backend, sock_path).serve()
+    # Punctuation defaults on in real mode, off in mock mode (so the dependency-free
+    # engine test doesn't need Ollama); --punctuate/--no-punctuate override either way.
+    punct_enabled = args.punctuate if args.punctuate is not None else (not args.mock)
+    ka = args.punctuate_keep_alive
+    keep_alive = int(ka) if ka.lstrip("-").isdigit() else ka     # "0" → 0, "5m" → "5m"
+    punctuator = Punctuator(model=args.punctuate_model, url=args.punctuate_url,
+                            enabled=punct_enabled, keep_alive=keep_alive)
+    if punct_enabled:
+        log(f"punctuation restoration on via {punctuator.model} (keep_alive={keep_alive!r})")
+    Server(backend, sock_path, punctuator).serve()
 
 
 if __name__ == "__main__":
